@@ -92,7 +92,7 @@ def _stringify_prompt(item: Any) -> str:
     if isinstance(item, str):
         return item
     if isinstance(item, dict):
-        for key in ("instruction", "prompt", "system_prompt", "text", "content", "message"):
+        for key in ("instruction", "prompt", "system_prompt", "text", "content", "message", "pos"):
             value = item.get(key)
             if isinstance(value, str):
                 return value
@@ -107,7 +107,15 @@ def load_role_prompts(role_path: Path) -> list[str]:
         prompts = [_stringify_prompt(item) for item in raw]
     elif isinstance(raw, dict):
         prompt_container = None
-        for key in ("instructions", "prompts", "system_prompts", "variants", "instruction_variants", "messages"):
+        for key in (
+            "instructions",
+            "prompts",
+            "system_prompts",
+            "variants",
+            "instruction_variants",
+            "messages",
+            "instruction",
+        ):
             if key in raw:
                 prompt_container = raw[key]
                 break

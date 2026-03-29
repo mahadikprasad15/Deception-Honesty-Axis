@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from deception_honesty_axis.config import ExperimentConfig
-from deception_honesty_axis.work_units import anchor_role, build_work_units, expand_work_units, pca_roles
+from deception_honesty_axis.work_units import anchor_role, build_work_units, expand_work_units, load_role_prompts, pca_roles
 
 
 class WorkUnitsTest(unittest.TestCase):
@@ -80,6 +80,25 @@ class WorkUnitsTest(unittest.TestCase):
             self.assertEqual(len(flat_units), 8)
             self.assertEqual(units[0].item_id, "default__p00__q000")
             self.assertEqual(units[-1].item_id, "spy__p01__q001")
+
+    def test_load_role_prompts_supports_upstream_instruction_list_with_pos(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            role_path = Path(tmp_dir) / "default.json"
+            role_path.write_text(
+                json.dumps(
+                    {
+                        "instruction": [
+                            {"pos": ""},
+                            {"pos": "You are an AI assistant."},
+                            {"pos": "Respond as yourself."},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            prompts = load_role_prompts(role_path)
+            self.assertEqual(prompts, ["You are an AI assistant.", "Respond as yourself."])
 
 
 if __name__ == "__main__":
