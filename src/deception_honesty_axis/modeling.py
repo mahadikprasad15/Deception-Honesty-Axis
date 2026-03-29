@@ -24,6 +24,7 @@ def load_model_and_tokenizer(model_config: dict[str, Any]):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
 
     device_map = "auto" if model_config.get("device", "auto") == "auto" else None
     model = AutoModelForCausalLM.from_pretrained(
