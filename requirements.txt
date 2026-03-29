@@ -1,0 +1,4 @@
+-e .
+huggingface_hub>=0.26
+ipykernel>=6.29
+jupyterlab>=4.2

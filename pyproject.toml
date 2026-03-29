@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deception-honesty-axis"
+version = "0.1.0"
+description = "Resumable assistant-axis-style experiments for deception and honesty role geometry."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "torch>=2.2",
+  "transformers>=4.45"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

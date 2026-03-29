@@ -1,0 +1,49 @@
+{
+  "name": "deception-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "spy",
+    "rogue",
+    "fixer",
+    "chameleon",
+    "narcissist",
+    "criminal"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true
+    },
+    {
+      "name": "spy",
+      "source": "spy.json",
+      "anchor_only": false
+    },
+    {
+      "name": "rogue",
+      "source": "rogue.json",
+      "anchor_only": false
+    },
+    {
+      "name": "fixer",
+      "source": "fixer.json",
+      "anchor_only": false
+    },
+    {
+      "name": "chameleon",
+      "source": "chameleon.json",
+      "anchor_only": false
+    },
+    {
+      "name": "narcissist",
+      "source": "narcissist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "criminal",
+      "source": "criminal.json",
+      "anchor_only": false
+    }
+  ]
+}
