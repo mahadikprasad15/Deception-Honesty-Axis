@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from pathlib import Path
+import time
 
 from deception_honesty_axis.common import ensure_dir, utc_now_iso, write_json
 from deception_honesty_axis.config import corpus_root as resolve_corpus_root
@@ -27,6 +28,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("configs/experiments/deception_v1_llama32_3b.json"),
         help="Path to the experiment config file.",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=20,
+        help="Print progress every N completed activation items.",
     )
     return parser.parse_args()
 
@@ -102,6 +109,7 @@ def main() -> None:
     save_every = int(config.saving["save_every"])
     activation_buffers: dict[str, list[dict]] = defaultdict(list)
     index_buffers: dict[str, list[dict]] = defaultdict(list)
+    started_at = time.monotonic()
 
     for offset, index_row in enumerate(rollout_rows, start=1):
         rollout_record = rollout_records[index_row["item_id"]]
@@ -176,6 +184,15 @@ def main() -> None:
                 "updated_at": utc_now_iso(),
             },
         )
+        if offset % args.progress_every == 0:
+            elapsed = max(time.monotonic() - started_at, 1e-6)
+            rate = offset / elapsed
+            remaining = len(rollout_rows) - offset
+            eta_seconds = remaining / rate if rate > 0 else float("inf")
+            print(
+                f"[activations] {offset}/{len(rollout_rows)} missing items done "
+                f"({rate:.2f} items/s, eta {eta_seconds/60:.1f} min)"
+            )
 
     for role in list(activation_buffers):
         flush_activation_buffer(corpus_path, role, activation_buffers[role], index_buffers[role])
@@ -191,6 +208,8 @@ def main() -> None:
         },
     )
     write_stage_status(corpus_path, "extract_activations", "completed", {"activated_items": len(final_activations)})
+    total_elapsed = max(time.monotonic() - started_at, 1e-6)
+    print(f"[activations] completed {len(rollout_rows)} items this run in {total_elapsed/60:.1f} min")
     print(f"Extracted activations for {len(final_activations)} items.")
 
 

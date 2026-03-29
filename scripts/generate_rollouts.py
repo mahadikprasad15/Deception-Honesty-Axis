@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from pathlib import Path
+import time
 
 from deception_honesty_axis.common import append_jsonl, utc_now_iso, write_json
 from deception_honesty_axis.config import corpus_root as resolve_corpus_root
@@ -28,6 +29,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to the experiment config file.",
     )
     parser.add_argument("--batch-size", type=int, default=2, help="Number of prompts per generation batch.")
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=20,
+        help="Print progress every N completed items.",
+    )
     return parser.parse_args()
 
 
@@ -92,6 +99,8 @@ def main() -> None:
     tokenizer, model = load_model_and_tokenizer(model_settings)
     rollout_buffers: dict[str, list[dict]] = defaultdict(list)
     index_buffers: dict[str, list[dict]] = defaultdict(list)
+    started_at = time.monotonic()
+    processed_items = 0
 
     for batch_start in range(0, len(missing_units), args.batch_size):
         batch = missing_units[batch_start: batch_start + args.batch_size]
@@ -115,6 +124,17 @@ def main() -> None:
             )
             if len(rollout_buffers[unit["role"]]) >= save_every:
                 flush_role_buffer(corpus_path, unit["role"], rollout_buffers[unit["role"]], index_buffers[unit["role"]])
+            processed_items += 1
+
+            if processed_items % args.progress_every == 0:
+                elapsed = max(time.monotonic() - started_at, 1e-6)
+                rate = processed_items / elapsed
+                remaining = len(missing_units) - processed_items
+                eta_seconds = remaining / rate if rate > 0 else float("inf")
+                print(
+                    f"[generate] {processed_items}/{len(missing_units)} missing items done "
+                    f"({rate:.2f} items/s, eta {eta_seconds/60:.1f} min)"
+                )
 
         write_json(
             corpus_path / "checkpoints" / "generate_rollouts_progress.json",
@@ -122,6 +142,7 @@ def main() -> None:
                 "target_items": len(work_units),
                 "completed_batches": batch_start // args.batch_size + 1,
                 "completed_items": len(load_index(corpus_path, "rollouts")) + sum(len(values) for values in rollout_buffers.values()),
+                "processed_this_run": processed_items,
                 "updated_at": utc_now_iso(),
             },
         )
@@ -140,6 +161,8 @@ def main() -> None:
         },
     )
     write_stage_status(corpus_path, "generate_rollouts", "completed", {"generated_items": len(final_rollout_index)})
+    total_elapsed = max(time.monotonic() - started_at, 1e-6)
+    print(f"[generate] completed {processed_items} items this run in {total_elapsed/60:.1f} min")
     print(f"Generated {len(final_rollout_index)} rollout records.")
 
 
