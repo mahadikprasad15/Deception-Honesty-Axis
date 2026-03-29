@@ -105,13 +105,13 @@ def main() -> None:
 
     for offset, index_row in enumerate(rollout_rows, start=1):
         rollout_record = rollout_records[index_row["item_id"]]
-        prefix_ids = tokenizer.apply_chat_template(
+        prefix_encoding = tokenizer.apply_chat_template(
             build_messages(rollout_record["system_prompt"], rollout_record["question_text"]),
             tokenize=True,
             add_generation_prompt=True,
             return_tensors="pt",
         )
-        full_ids = tokenizer.apply_chat_template(
+        full_encoding = tokenizer.apply_chat_template(
             build_messages(
                 rollout_record["system_prompt"],
                 rollout_record["question_text"],
@@ -121,7 +121,21 @@ def main() -> None:
             add_generation_prompt=False,
             return_tensors="pt",
         )
-        attention_mask = torch.ones_like(full_ids)
+        if hasattr(prefix_encoding, "input_ids"):
+            prefix_ids = prefix_encoding["input_ids"]
+        else:
+            prefix_ids = prefix_encoding
+
+        if hasattr(full_encoding, "input_ids"):
+            full_ids = full_encoding["input_ids"]
+            attention_mask = full_encoding.get("attention_mask")
+        else:
+            full_ids = full_encoding
+            attention_mask = None
+
+        if attention_mask is None:
+            attention_mask = torch.ones_like(full_ids)
+
         full_ids = full_ids.to(model_device)
         attention_mask = attention_mask.to(model_device)
         response_start = int(prefix_ids.shape[-1])
