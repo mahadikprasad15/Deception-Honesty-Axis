@@ -1,4 +1,5 @@
 -e .
+accelerate>=0.33
 huggingface_hub>=0.26
 ipykernel>=6.29
 jupyterlab>=4.2

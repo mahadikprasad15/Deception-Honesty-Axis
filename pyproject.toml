@@ -9,6 +9,7 @@ description = "Resumable assistant-axis-style experiments for deception and hone
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "accelerate>=0.33",
   "matplotlib>=3.8",
   "numpy>=1.26",
   "torch>=2.2",

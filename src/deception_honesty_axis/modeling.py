@@ -18,14 +18,17 @@ def resolve_dtype(name: str) -> torch.dtype:
 
 
 def load_model_and_tokenizer(model_config: dict[str, Any]):
-    tokenizer = AutoTokenizer.from_pretrained(model_config["name"])
+    model_name = model_config.get("name") or model_config["id"]
+    dtype_name = model_config.get("dtype") or model_config.get("torch_dtype", "float16")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     device_map = "auto" if model_config.get("device", "auto") == "auto" else None
     model = AutoModelForCausalLM.from_pretrained(
-        model_config["name"],
-        torch_dtype=resolve_dtype(model_config.get("torch_dtype", "float16")),
+        model_name,
+        dtype=resolve_dtype(dtype_name),
         device_map=device_map,
     )
     model.eval()
