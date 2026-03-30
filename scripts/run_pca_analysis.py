@@ -4,7 +4,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from deception_honesty_axis.analysis import cosine_similarity, run_centered_pca, save_results_json, save_scatter_plot
+from deception_honesty_axis.analysis import (
+    cosine_similarity,
+    run_centered_pca,
+    save_results_json,
+    write_pca_report_artifacts,
+)
 from deception_honesty_axis.common import ensure_dir, make_run_id, read_json, write_json
 from deception_honesty_axis.config import analysis_run_root, load_config
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
@@ -56,8 +61,6 @@ def main() -> None:
     write_stage_status(run_root, "run_pca_analysis", "running", {"role_count": len(role_names)})
 
     per_layer_results: list[dict] = []
-    coordinates_pc12: dict[str, tuple[float, float]] = {}
-    coordinates_pc13: dict[str, tuple[float, float]] = {}
     layer_count = int(next(iter(role_vectors.values())).shape[0])
 
     for layer_idx in range(layer_count):
@@ -80,25 +83,17 @@ def main() -> None:
                 "contrast_pc_cosines": pc_cosines,
             }
         )
-        if layer_idx == layer_count - 1:
-            coordinates_pc12 = {
-                role: (float(pca["projections"][offset][0]), float(pca["projections"][offset][1]))
-                for offset, role in enumerate(role_names)
-            }
-            coordinates_pc12[anchor_role] = (float(anchor_projection[0]), float(anchor_projection[1]))
-            if pca["projections"].shape[1] > 2:
-                coordinates_pc13 = {
-                    role: (float(pca["projections"][offset][0]), float(pca["projections"][offset][2]))
-                    for offset, role in enumerate(role_names)
-                }
-                coordinates_pc13[anchor_role] = (float(anchor_projection[0]), float(anchor_projection[2]))
 
-    save_results_json(run_root / "results" / "results.json", {"layers": per_layer_results})
-    save_scatter_plot(run_root / "results" / "plots" / "pc1_pc2.png", coordinates_pc12, "PC1", "PC2")
-    if coordinates_pc13:
-        save_scatter_plot(run_root / "results" / "plots" / "pc1_pc3.png", coordinates_pc13, "PC1", "PC3")
+    results_payload = {"anchor_role": anchor_role, "role_names": role_names, "layers": per_layer_results}
+    save_results_json(run_root / "results" / "results.json", results_payload)
+    report_artifacts = write_pca_report_artifacts(run_root, per_layer_results, anchor_role, role_names)
     write_json(run_root / "checkpoints" / "progress.json", {"layers_processed": layer_count, "completed": True})
-    write_stage_status(run_root, "run_pca_analysis", "completed", {"layers_processed": layer_count})
+    write_stage_status(
+        run_root,
+        "run_pca_analysis",
+        "completed",
+        {"layers_processed": layer_count, "report_artifacts": report_artifacts},
+    )
     print(f"Wrote PCA analysis to {run_root}")
 
 

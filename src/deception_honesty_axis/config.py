@@ -84,6 +84,14 @@ class ExperimentConfig:
         return (self.repo_root / value).resolve()
 
     @property
+    def corpus_name(self) -> str | None:
+        artifacts = self.raw.get("artifacts", {})
+        value = artifacts.get("corpus_name")
+        if value is None:
+            return None
+        return str(value)
+
+    @property
     def subset(self) -> dict[str, Any]:
         if "subset" in self.raw:
             return dict(self.raw["subset"])
@@ -137,12 +145,13 @@ def resolve_repo_path(config: ExperimentConfig, value: str) -> Path:
 
 
 def corpus_root(config: ExperimentConfig) -> Path:
+    corpus_slug = slugify(config.corpus_name) if config.corpus_name else config.role_set_slug
     root = (
         config.artifact_root
         / "corpora"
         / config.model_slug
         / config.dataset_slug
-        / config.role_set_slug
+        / corpus_slug
     )
     ensure_dir(root)
     return root

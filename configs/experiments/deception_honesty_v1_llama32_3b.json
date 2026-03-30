@@ -1,5 +1,5 @@
 {
-  "experiment_name": "deception-assistant-pca",
+  "experiment_name": "deception-honesty-pca",
   "model": {
     "id": "meta-llama/Llama-3.2-3B-Instruct",
     "dtype": "float16",
@@ -14,7 +14,7 @@
   },
   "data": {
     "question_file": "data/questions/extraction_questions.jsonl",
-    "role_manifest_file": "data/manifests/role_sets/deception_v1.json"
+    "role_manifest_file": "data/manifests/role_sets/deception_honesty_v1.json"
   },
   "subset": {
     "instruction_selection": "first_n",
