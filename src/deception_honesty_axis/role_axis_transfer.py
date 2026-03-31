@@ -526,12 +526,58 @@ def write_summary_csv(path: Path, metric_rows: list[dict[str, Any]]) -> None:
             )
 
 
+def write_fit_summary_csv(path: Path, fit_artifacts_path: Path) -> None:
+    ensure_dir(path.parent)
+    fieldnames = [
+        "method",
+        "layer_spec",
+        "source_dataset",
+        "target_dataset",
+        "coef",
+        "intercept",
+        "coef_l2_norm",
+        "coef_dim",
+    ]
+    if not fit_artifacts_path.exists():
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+        return
+
+    rows: list[dict[str, Any]] = []
+    with fit_artifacts_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            coef = np.asarray(record.get("coef", []), dtype=np.float32)
+            rows.append(
+                {
+                    "method": record.get("method"),
+                    "layer_spec": record.get("layer_spec"),
+                    "source_dataset": record.get("source_dataset"),
+                    "target_dataset": record.get("target_dataset"),
+                    "coef": json.dumps([float(value) for value in coef.tolist()]),
+                    "intercept": json.dumps(record.get("intercept", [])),
+                    "coef_l2_norm": float(np.linalg.norm(coef)) if coef.size else 0.0,
+                    "coef_dim": int(coef.size),
+                }
+            )
+
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def save_metric_heatmaps(
     output_dir: Path,
     metric_rows: list[dict[str, Any]],
     methods: list[str],
     layer_specs: list[str],
     datasets: list[str],
+    *,
+    metrics: tuple[str, ...] = ("auroc", "auprc", "balanced_accuracy", "f1"),
 ) -> list[str]:
     import matplotlib.pyplot as plt
 
@@ -551,11 +597,7 @@ def save_metric_heatmaps(
 
     for method in methods:
         for layer_spec in layer_specs:
-            rows = [
-                row
-                for row in metric_rows
-                if row["method"] == method and row["layer_spec"] == layer_spec
-            ]
+            rows = [row for row in metric_rows if row["method"] == method and row["layer_spec"] == layer_spec]
             if not rows:
                 continue
 
@@ -563,50 +605,61 @@ def save_metric_heatmaps(
             sources = [ZERO_SHOT_SOURCE] if ZERO_SHOT_SOURCE in seen_sources else []
             sources.extend([name for name in datasets if name in seen_sources])
             source_index = {name: idx for idx, name in enumerate(sources)}
-            matrix = np.full((len(sources), len(datasets)), np.nan, dtype=np.float32)
-            for row in rows:
-                matrix[source_index[row["source_dataset"]], target_index[row["target_dataset"]]] = float(row["auroc"])
 
-            fig, ax = plt.subplots(figsize=(max(12, len(datasets) * 2.0), max(5, len(sources) * 1.3)))
-            image = ax.imshow(matrix, vmin=0.0, vmax=1.0, aspect="auto", cmap="viridis")
-            ax.set_xticks(
-                range(len(datasets)),
-                [dataset_labels.get(name, name) for name in datasets],
-                rotation=35,
-                ha="right",
-                fontsize=12,
-            )
-            ax.set_yticks(
-                range(len(sources)),
-                [dataset_labels.get(name, name) for name in sources],
-                fontsize=12,
-            )
-            ax.set_title(f"AUROC heatmap: {method} @ {layer_spec}")
-            for row_index in range(matrix.shape[0]):
-                for col_index in range(matrix.shape[1]):
-                    value = matrix[row_index, col_index]
-                    if np.isnan(value):
+            for metric_name in metrics:
+                matrix = np.full((len(sources), len(datasets)), np.nan, dtype=np.float32)
+                for row in rows:
+                    value = row.get(metric_name)
+                    if value in (None, ""):
                         continue
-                    ax.text(
-                        col_index,
-                        row_index,
-                        f"{value:.2f}",
-                        ha="center",
-                        va="center",
-                        fontsize=11,
-                        color="white" if value < 0.55 else "black",
-                        fontweight="bold",
-                    )
-            ax.set_xticks(np.arange(-0.5, len(datasets), 1), minor=True)
-            ax.set_yticks(np.arange(-0.5, len(sources), 1), minor=True)
-            ax.grid(which="minor", color="white", linestyle="-", linewidth=1.5)
-            ax.tick_params(which="minor", bottom=False, left=False)
-            fig.colorbar(image, ax=ax, label="AUROC", fraction=0.046, pad=0.04)
-            fig.tight_layout()
-            path = output_dir / f"{method}__{layer_spec}__auroc_heatmap.png"
-            fig.savefig(path, dpi=200, bbox_inches="tight")
-            plt.close(fig)
-            output_paths.append(str(path))
+                    matrix[source_index[row["source_dataset"]], target_index[row["target_dataset"]]] = float(value)
+
+                fig, ax = plt.subplots(figsize=(max(12, len(datasets) * 2.0), max(5, len(sources) * 1.3)))
+                image = ax.imshow(matrix, vmin=0.0, vmax=1.0, aspect="auto", cmap="viridis")
+                ax.set_xticks(
+                    range(len(datasets)),
+                    [dataset_labels.get(name, name) for name in datasets],
+                    rotation=35,
+                    ha="right",
+                    fontsize=12,
+                )
+                ax.set_yticks(
+                    range(len(sources)),
+                    [dataset_labels.get(name, name) for name in sources],
+                    fontsize=12,
+                )
+                ax.set_title(f"{metric_name.replace('_', ' ').title()} heatmap: {method} @ {layer_spec}")
+                for row_index in range(matrix.shape[0]):
+                    for col_index in range(matrix.shape[1]):
+                        value = matrix[row_index, col_index]
+                        if np.isnan(value):
+                            continue
+                        ax.text(
+                            col_index,
+                            row_index,
+                            f"{value:.2f}",
+                            ha="center",
+                            va="center",
+                            fontsize=11,
+                            color="white" if value < 0.55 else "black",
+                            fontweight="bold",
+                        )
+                ax.set_xticks(np.arange(-0.5, len(datasets), 1), minor=True)
+                ax.set_yticks(np.arange(-0.5, len(sources), 1), minor=True)
+                ax.grid(which="minor", color="white", linestyle="-", linewidth=1.5)
+                ax.tick_params(which="minor", bottom=False, left=False)
+                fig.colorbar(
+                    image,
+                    ax=ax,
+                    label=metric_name.replace("_", " ").title(),
+                    fraction=0.046,
+                    pad=0.04,
+                )
+                fig.tight_layout()
+                path = output_dir / f"{method}__{layer_spec}__{metric_name}_heatmap.png"
+                fig.savefig(path, dpi=200, bbox_inches="tight")
+                plt.close(fig)
+                output_paths.append(str(path))
 
     return output_paths
 

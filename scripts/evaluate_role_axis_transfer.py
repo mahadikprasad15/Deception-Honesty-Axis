@@ -24,6 +24,7 @@ from deception_honesty_axis.role_axis_transfer import (
     save_metric_heatmaps,
     save_score_rows,
     scores_for_layer,
+    write_fit_summary_csv,
     write_summary_csv,
 )
 from deception_honesty_axis.transfer_config import load_transfer_config
@@ -456,6 +457,7 @@ def main() -> None:
         with metrics_path.open("r", encoding="utf-8", newline="") as handle:
             metric_rows = list(__import__("csv").DictReader(handle))
     write_summary_csv(results_dir / "summary_by_method.csv", metric_rows)
+    write_fit_summary_csv(results_dir / "fit_summary.csv", fit_artifacts_path)
     heatmap_paths = save_metric_heatmaps(
         results_dir / "plots",
         metric_rows,
