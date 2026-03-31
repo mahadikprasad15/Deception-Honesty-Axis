@@ -12,6 +12,8 @@ dependencies = [
   "accelerate>=0.33",
   "matplotlib>=3.8",
   "numpy>=1.26",
+  "safetensors>=0.4",
+  "scikit-learn>=1.4",
   "torch>=2.2",
   "transformers>=4.45"
 ]

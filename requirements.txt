@@ -3,3 +3,5 @@ accelerate>=0.33
 huggingface_hub>=0.26
 ipykernel>=6.29
 jupyterlab>=4.2
+safetensors>=0.4
+scikit-learn>=1.4
