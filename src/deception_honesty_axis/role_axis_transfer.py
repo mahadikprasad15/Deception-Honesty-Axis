@@ -274,10 +274,23 @@ def _pool_completion_mean_for_spec(tensor, row: dict[str, Any], spec: ResolvedLa
     end = int(row["completion_end_idx"])
     if end <= start:
         raise ValueError(f"Invalid completion bounds [{start}, {end}) for sample {row.get('id')}")
-    if end > int(tensor.shape[1]):
-        raise ValueError(
-            f"Completion bound {end} exceeds token length {int(tensor.shape[1])} for sample {row.get('id')}"
-        )
+    tensor_len = int(tensor.shape[1])
+    if end > tensor_len:
+        original_length = int(row.get("generation_length") or 0)
+        if original_length <= 0:
+            raise ValueError(
+                f"Completion bound {end} exceeds token length {tensor_len} for sample {row.get('id')} "
+                "and manifest generation_length is missing"
+            )
+        if original_length < end:
+            raise ValueError(
+                f"Completion bound {end} exceeds manifest generation_length {original_length} "
+                f"for sample {row.get('id')}"
+            )
+        start = int(np.floor(start / original_length * tensor_len))
+        end = int(np.ceil(end / original_length * tensor_len))
+        start = max(0, min(start, tensor_len - 1))
+        end = max(start + 1, min(end, tensor_len))
 
     pooled_layers: list[torch.Tensor] = []
     for layer_index in spec.layer_indices:

@@ -97,6 +97,30 @@ class RoleAxisTransferTest(unittest.TestCase):
             self.assertEqual(score_payload["contrast"].shape, (1,))
             self.assertEqual(score_payload["pc_scores"].shape[0], 1)
 
+    def test_load_completion_mean_split_scales_manifest_bounds_for_resampled_fullprompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            split_dir = Path(tmp_dir) / "Deception-AILiar-completion" / "test"
+            split_dir.mkdir(parents=True)
+            manifest_path = split_dir / "manifest.jsonl"
+            rows = [
+                {
+                    "id": "sample-1",
+                    "label": 1,
+                    "generation_length": 320,
+                    "user_end_idx": 160,
+                    "completion_end_idx": 320,
+                }
+            ]
+            manifest_path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+            values = torch.arange(1 * 64 * 2, dtype=torch.float32).reshape(1, 64, 2)
+            save_file({"sample-1": values}, str(split_dir / "shard_0000.safetensors"))
+
+            specs = resolve_layer_specs(1, ["1"])
+            cached = load_completion_mean_split(split_dir, specs)
+            expected = values[0, 32:64, :].mean(dim=0).numpy().astype(np.float32)
+            np.testing.assert_allclose(cached.features_by_spec["1"][0], expected)
+
     def test_zero_shot_predictions_treat_negative_honest_score_as_deceptive(self) -> None:
         metrics, deceptive_scores, probabilities = evaluate_zero_shot(
             np.array([1, 0], dtype=np.int64),
