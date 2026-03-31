@@ -8,7 +8,12 @@ from pathlib import Path
 
 from deception_honesty_axis.common import read_json
 from deception_honesty_axis.metadata import write_stage_status
-from deception_honesty_axis.role_axis_transfer import save_metric_heatmaps, write_fit_summary_csv, write_summary_csv
+from deception_honesty_axis.role_axis_transfer import (
+    save_metric_heatmaps,
+    save_transfer_lineplots,
+    write_fit_summary_csv,
+    write_summary_csv,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,6 +99,12 @@ def main() -> None:
         layer_specs,
         datasets,
     )
+    lineplot_paths = save_transfer_lineplots(
+        results_dir / "plots",
+        metric_rows,
+        layer_specs,
+        datasets,
+    )
 
     payload = {
         "metric_rows": len(metric_rows),
@@ -101,11 +112,12 @@ def main() -> None:
         "layer_specs": layer_specs,
         "datasets": datasets,
         "heatmaps": heatmap_paths,
+        "lineplots": lineplot_paths,
     }
     write_stage_status(run_root, "postprocess_role_axis_transfer", "completed", payload)
     print(
         f"[role-axis-transfer-postprocess] wrote summary_by_method.csv, fit_summary.csv, "
-        f"and {len(heatmap_paths)} heatmaps under {results_dir}"
+        f"{len(heatmap_paths)} heatmaps, and {len(lineplot_paths)} line plots under {results_dir}"
     )
 
 

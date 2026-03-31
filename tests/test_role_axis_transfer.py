@@ -16,6 +16,7 @@ from deception_honesty_axis.role_axis_transfer import (
     evaluate_zero_shot,
     load_completion_mean_split,
     resolve_layer_specs,
+    save_transfer_lineplots,
     scores_for_layer,
     write_role_axis_bundle,
 )
@@ -176,6 +177,61 @@ class RoleAxisTransferTest(unittest.TestCase):
             with Path(outputs["layer_summary"]).open("r", encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(rows[0]["layer_spec"], "4")
+
+    def test_save_transfer_lineplots_writes_expected_figure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            metric_rows = [
+                {
+                    "method": "contrast_zero_shot",
+                    "layer_spec": "7",
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.60",
+                },
+                {
+                    "method": "contrast_zero_shot",
+                    "layer_spec": "14",
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.70",
+                },
+                {
+                    "method": "pc1_zero_shot",
+                    "layer_spec": "7",
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.55",
+                },
+                {
+                    "method": "pc1_zero_shot",
+                    "layer_spec": "14",
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.65",
+                },
+                {
+                    "method": "pc123_linear",
+                    "layer_spec": "7",
+                    "source_dataset": "Deception-ConvincingGame-completion",
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.62",
+                },
+                {
+                    "method": "pc123_linear",
+                    "layer_spec": "14",
+                    "source_dataset": "Deception-ConvincingGame-completion",
+                    "target_dataset": "Deception-AILiar-completion",
+                    "auroc": "0.74",
+                },
+            ]
+            outputs = save_transfer_lineplots(
+                Path(tmp_dir),
+                metric_rows,
+                ["7", "14"],
+                ["Deception-AILiar-completion", "Deception-ConvincingGame-completion"],
+            )
+            self.assertEqual(len(outputs), 1)
+            self.assertTrue(Path(outputs[0]).exists())
 
 
 if __name__ == "__main__":

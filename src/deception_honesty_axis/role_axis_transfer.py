@@ -16,6 +16,16 @@ ZERO_SHOT_SOURCE = "__zero_shot__"
 ZERO_SHOT_METHODS = {"contrast_zero_shot", "pc1_zero_shot"}
 TRAINED_METHODS = {"contrast_logistic", "pc123_linear"}
 SUPPORTED_METHODS = ZERO_SHOT_METHODS | TRAINED_METHODS
+DATASET_LABELS = {
+    "Deception-AILiar-completion": "AILiar",
+    "Deception-ConvincingGame-completion": "ConvGame",
+    "Deception-HarmPressureChoice-completion": "HarmChoice",
+    "Deception-InstructedDeception-completion": "InstrDec",
+    "Deception-InsiderTrading-SallyConcat-completion": "Insider",
+    "Deception-Mask-completion": "Mask",
+    "Deception-Roleplaying-completion": "Roleplay",
+    ZERO_SHOT_SOURCE: "ZeroShot",
+}
 
 
 @dataclass(frozen=True)
@@ -584,16 +594,6 @@ def save_metric_heatmaps(
     ensure_dir(output_dir)
     output_paths: list[str] = []
     target_index = {name: idx for idx, name in enumerate(datasets)}
-    dataset_labels = {
-        "Deception-AILiar-completion": "AILiar",
-        "Deception-ConvincingGame-completion": "ConvGame",
-        "Deception-HarmPressureChoice-completion": "HarmChoice",
-        "Deception-InstructedDeception-completion": "InstrDec",
-        "Deception-InsiderTrading-SallyConcat-completion": "Insider",
-        "Deception-Mask-completion": "Mask",
-        "Deception-Roleplaying-completion": "Roleplay",
-        ZERO_SHOT_SOURCE: "ZeroShot",
-    }
 
     for method in methods:
         for layer_spec in layer_specs:
@@ -618,14 +618,14 @@ def save_metric_heatmaps(
                 image = ax.imshow(matrix, vmin=0.0, vmax=1.0, aspect="auto", cmap="viridis")
                 ax.set_xticks(
                     range(len(datasets)),
-                    [dataset_labels.get(name, name) for name in datasets],
+                    [DATASET_LABELS.get(name, name) for name in datasets],
                     rotation=35,
                     ha="right",
                     fontsize=12,
                 )
                 ax.set_yticks(
                     range(len(sources)),
-                    [dataset_labels.get(name, name) for name in sources],
+                    [DATASET_LABELS.get(name, name) for name in sources],
                     fontsize=12,
                 )
                 ax.set_title(f"{metric_name.replace('_', ' ').title()} heatmap: {method} @ {layer_spec}")
@@ -662,6 +662,137 @@ def save_metric_heatmaps(
                 output_paths.append(str(path))
 
     return output_paths
+
+
+def save_transfer_lineplots(
+    output_dir: Path,
+    metric_rows: list[dict[str, Any]],
+    layer_specs: list[str],
+    datasets: list[str],
+    *,
+    metric_name: str = "auroc",
+) -> list[str]:
+    import matplotlib.pyplot as plt
+
+    ensure_dir(output_dir)
+    rows = [
+        row
+        for row in metric_rows
+        if row["method"] in {"contrast_zero_shot", "pc1_zero_shot", "pc123_linear"}
+    ]
+    if not rows:
+        return []
+
+    layer_order = {layer_spec: idx for idx, layer_spec in enumerate(layer_specs)}
+    method_labels = {
+        "contrast_zero_shot": "Contrast Zero-Shot",
+        "pc1_zero_shot": "PC1 Zero-Shot",
+        "pc123_linear": "PC123 Mean Cross-Source",
+    }
+    method_colors = {
+        "contrast_zero_shot": "#0b7285",
+        "pc1_zero_shot": "#e67700",
+        "pc123_linear": "#c2255c",
+    }
+    plot_records: dict[str, dict[str, dict[str, float]]] = {
+        dataset: {
+            "contrast_zero_shot": {},
+            "pc1_zero_shot": {},
+            "pc123_linear": {},
+        }
+        for dataset in datasets
+    }
+
+    for dataset in datasets:
+        zero_shot_rows = [
+            row
+            for row in rows
+            if row["target_dataset"] == dataset and row["source_dataset"] == ZERO_SHOT_SOURCE
+        ]
+        for row in zero_shot_rows:
+            plot_records[dataset][row["method"]][row["layer_spec"]] = float(row[metric_name])
+
+        cross_rows = [
+            row
+            for row in rows
+            if row["method"] == "pc123_linear"
+            and row["target_dataset"] == dataset
+            and row["source_dataset"] not in {ZERO_SHOT_SOURCE, dataset}
+        ]
+        by_layer: dict[str, list[float]] = {}
+        for row in cross_rows:
+            by_layer.setdefault(row["layer_spec"], []).append(float(row[metric_name]))
+        for layer_spec, values in by_layer.items():
+            if values:
+                plot_records[dataset]["pc123_linear"][layer_spec] = float(np.mean(values))
+
+    figure_paths: list[str] = []
+    ncols = 2
+    nrows = int(np.ceil(len(datasets) / ncols))
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(15, max(4.5 * nrows, 8)),
+        constrained_layout=True,
+    )
+    axes_array = np.atleast_1d(axes).reshape(-1)
+
+    for ax in axes_array:
+        ax.set_facecolor("#fbfbfd")
+        ax.grid(True, axis="y", color="#dfe3e6", linewidth=0.8, alpha=0.9)
+        ax.grid(False, axis="x")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#adb5bd")
+        ax.spines["bottom"].set_color("#adb5bd")
+        ax.set_ylim(0.0, 1.0)
+
+    for ax, dataset in zip(axes_array, datasets, strict=False):
+        for method in ("contrast_zero_shot", "pc1_zero_shot", "pc123_linear"):
+            series = plot_records[dataset][method]
+            x_values = [layer_order[layer_spec] for layer_spec in layer_specs if layer_spec in series]
+            y_values = [series[layer_spec] for layer_spec in layer_specs if layer_spec in series]
+            if not x_values:
+                continue
+            ax.plot(
+                x_values,
+                y_values,
+                color=method_colors[method],
+                linewidth=2.4,
+                marker="o",
+                markersize=5.5,
+                label=method_labels[method],
+            )
+        ax.set_title(DATASET_LABELS.get(dataset, dataset), fontsize=14, fontweight="bold", color="#1f2933")
+        ax.set_xticks(range(len(layer_specs)), layer_specs, fontsize=11)
+        ax.set_ylabel(metric_name.upper(), fontsize=11, color="#495057")
+
+    for ax in axes_array[len(datasets):]:
+        ax.axis("off")
+
+    handles, labels = axes_array[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            ncol=3,
+            frameon=False,
+            fontsize=12,
+            bbox_to_anchor=(0.5, 1.02),
+        )
+    fig.suptitle(
+        f"Role-Axis Transfer Across Layers ({metric_name.upper()})",
+        fontsize=20,
+        fontweight="bold",
+        color="#111827",
+    )
+
+    path = output_dir / f"role_axis_transfer_by_layer__{metric_name}.png"
+    fig.savefig(path, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    figure_paths.append(str(path))
+    return figure_paths
 
 
 def save_fit_artifact(path: Path, record: dict[str, Any]) -> None:

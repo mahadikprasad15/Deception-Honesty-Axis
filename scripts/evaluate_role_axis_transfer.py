@@ -23,6 +23,7 @@ from deception_honesty_axis.role_axis_transfer import (
     save_fit_artifact,
     save_metric_heatmaps,
     save_score_rows,
+    save_transfer_lineplots,
     scores_for_layer,
     write_fit_summary_csv,
     write_summary_csv,
@@ -465,6 +466,12 @@ def main() -> None:
         [spec.key for spec in resolved_specs],
         transfer_config.target_datasets,
     )
+    lineplot_paths = save_transfer_lineplots(
+        results_dir / "plots",
+        metric_rows,
+        [spec.key for spec in resolved_specs],
+        transfer_config.target_datasets,
+    )
     write_stage_status(
         run_root,
         "evaluate_role_axis_transfer",
@@ -473,6 +480,7 @@ def main() -> None:
             "expected_combinations": total_expected,
             "completed_combinations": len(completed_keys),
             "heatmaps": heatmap_paths,
+            "lineplots": lineplot_paths,
         },
     )
     progress_path.write_text(
@@ -484,6 +492,7 @@ def main() -> None:
                 "completed_this_run": completed_now,
                 "remaining_combinations": max(0, total_expected - len(completed_keys)),
                 "heatmaps": heatmap_paths,
+                "lineplots": lineplot_paths,
             },
             indent=2,
         )
