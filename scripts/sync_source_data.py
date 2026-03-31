@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -30,8 +31,14 @@ def download(url: str, output_path: Path, force: bool) -> dict[str, str]:
     if output_path.exists() and not force:
         status = "skipped"
     else:
-        urllib.request.urlretrieve(url, output_path)
-        status = "downloaded"
+        try:
+            urllib.request.urlretrieve(url, output_path)
+            status = "downloaded"
+        except urllib.error.HTTPError:
+            if output_path.exists():
+                status = "retained_local"
+            else:
+                raise
     return {
         "url": url,
         "path": str(output_path),

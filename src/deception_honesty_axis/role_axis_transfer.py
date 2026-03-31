@@ -587,7 +587,7 @@ def save_metric_heatmaps(
     layer_specs: list[str],
     datasets: list[str],
     *,
-    metrics: tuple[str, ...] = ("auroc", "auprc", "balanced_accuracy", "f1"),
+    metrics: tuple[str, ...] = ("auroc",),
 ) -> list[str]:
     import matplotlib.pyplot as plt
 

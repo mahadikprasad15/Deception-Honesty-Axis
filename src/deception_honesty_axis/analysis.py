@@ -132,6 +132,32 @@ def _final_layer_coordinates(
     return coordinates
 
 
+def _layer_coordinates(
+    layers: list[dict[str, Any]],
+    anchor_role: str,
+    role_names: list[str],
+    layer_index: int,
+    x_index: int,
+    y_index: int,
+) -> dict[str, tuple[float, float]]:
+    layer_entry = next((entry for entry in layers if int(entry["layer"]) == layer_index), None)
+    if layer_entry is None:
+        return {}
+
+    anchor_projection = list(layer_entry["anchor_projection"])
+    if len(anchor_projection) <= max(x_index, y_index):
+        return {}
+
+    coordinates: dict[str, tuple[float, float]] = {}
+    for role in role_names:
+        role_projection = list(layer_entry["role_projections"][role])
+        if len(role_projection) <= max(x_index, y_index):
+            continue
+        coordinates[role] = (float(role_projection[x_index]), float(role_projection[y_index]))
+    coordinates[anchor_role] = (float(anchor_projection[x_index]), float(anchor_projection[y_index]))
+    return coordinates
+
+
 def _save_heatmap(
     output_path: Path,
     matrix: list[list[float]],
@@ -286,6 +312,15 @@ def write_pca_report_artifacts(
     if coordinates_pc12:
         save_scatter_plot(plots_dir / "pc1_pc2.png", coordinates_pc12, "PC1", "PC2")
 
+    layer_pc12_paths: dict[str, str] = {}
+    for selected_layer in (7, 14, 21, 28):
+        selected_coordinates = _layer_coordinates(layers, anchor_role, role_names, selected_layer - 1, 0, 1)
+        if not selected_coordinates:
+            continue
+        output_path = plots_dir / f"pc1_pc2__L{selected_layer}.png"
+        save_scatter_plot(output_path, selected_coordinates, "PC1", "PC2")
+        layer_pc12_paths[f"L{selected_layer}"] = str(output_path)
+
     coordinates_pc13 = _final_layer_coordinates(layers, anchor_role, role_names, 0, 2)
     if coordinates_pc13:
         save_scatter_plot(plots_dir / "pc1_pc3.png", coordinates_pc13, "PC1", "PC3")
@@ -332,6 +367,7 @@ def write_pca_report_artifacts(
             "pc1_pc2": str(plots_dir / "pc1_pc2.png"),
             "pc1_pc3": str(plots_dir / "pc1_pc3.png"),
             "pc2_pc3": str(plots_dir / "pc2_pc3.png"),
+            "pc1_pc2_selected_layers": layer_pc12_paths,
             "default_abs_projection_heatmap": str(plots_dir / "default_abs_projection_heatmap.png"),
             "contrast_cosine_heatmap": str(plots_dir / "contrast_cosine_heatmap.png"),
         },
