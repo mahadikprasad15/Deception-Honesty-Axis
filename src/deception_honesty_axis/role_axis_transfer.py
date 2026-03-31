@@ -538,6 +538,16 @@ def save_metric_heatmaps(
     ensure_dir(output_dir)
     output_paths: list[str] = []
     target_index = {name: idx for idx, name in enumerate(datasets)}
+    dataset_labels = {
+        "Deception-AILiar-completion": "AILiar",
+        "Deception-ConvincingGame-completion": "ConvGame",
+        "Deception-HarmPressureChoice-completion": "HarmChoice",
+        "Deception-InstructedDeception-completion": "InstrDec",
+        "Deception-InsiderTrading-SallyConcat-completion": "Insider",
+        "Deception-Mask-completion": "Mask",
+        "Deception-Roleplaying-completion": "Roleplay",
+        ZERO_SHOT_SOURCE: "ZeroShot",
+    }
 
     for method in methods:
         for layer_spec in layer_specs:
@@ -549,21 +559,52 @@ def save_metric_heatmaps(
             if not rows:
                 continue
 
-            sources = sorted({row["source_dataset"] for row in rows}, key=lambda name: (name != ZERO_SHOT_SOURCE, name))
+            seen_sources = {row["source_dataset"] for row in rows}
+            sources = [ZERO_SHOT_SOURCE] if ZERO_SHOT_SOURCE in seen_sources else []
+            sources.extend([name for name in datasets if name in seen_sources])
             source_index = {name: idx for idx, name in enumerate(sources)}
             matrix = np.full((len(sources), len(datasets)), np.nan, dtype=np.float32)
             for row in rows:
                 matrix[source_index[row["source_dataset"]], target_index[row["target_dataset"]]] = float(row["auroc"])
 
-            fig, ax = plt.subplots(figsize=(max(6, len(datasets) * 0.75), max(3, len(sources) * 0.55)))
+            fig, ax = plt.subplots(figsize=(max(12, len(datasets) * 2.0), max(5, len(sources) * 1.3)))
             image = ax.imshow(matrix, vmin=0.0, vmax=1.0, aspect="auto", cmap="viridis")
-            ax.set_xticks(range(len(datasets)), datasets, rotation=45, ha="right")
-            ax.set_yticks(range(len(sources)), sources)
+            ax.set_xticks(
+                range(len(datasets)),
+                [dataset_labels.get(name, name) for name in datasets],
+                rotation=35,
+                ha="right",
+                fontsize=12,
+            )
+            ax.set_yticks(
+                range(len(sources)),
+                [dataset_labels.get(name, name) for name in sources],
+                fontsize=12,
+            )
             ax.set_title(f"AUROC heatmap: {method} @ {layer_spec}")
-            fig.colorbar(image, ax=ax, label="AUROC")
+            for row_index in range(matrix.shape[0]):
+                for col_index in range(matrix.shape[1]):
+                    value = matrix[row_index, col_index]
+                    if np.isnan(value):
+                        continue
+                    ax.text(
+                        col_index,
+                        row_index,
+                        f"{value:.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=11,
+                        color="white" if value < 0.55 else "black",
+                        fontweight="bold",
+                    )
+            ax.set_xticks(np.arange(-0.5, len(datasets), 1), minor=True)
+            ax.set_yticks(np.arange(-0.5, len(sources), 1), minor=True)
+            ax.grid(which="minor", color="white", linestyle="-", linewidth=1.5)
+            ax.tick_params(which="minor", bottom=False, left=False)
+            fig.colorbar(image, ax=ax, label="AUROC", fraction=0.046, pad=0.04)
             fig.tight_layout()
             path = output_dir / f"{method}__{layer_spec}__auroc_heatmap.png"
-            fig.savefig(path)
+            fig.savefig(path, dpi=200, bbox_inches="tight")
             plt.close(fig)
             output_paths.append(str(path))
 
