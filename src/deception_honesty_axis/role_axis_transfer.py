@@ -262,7 +262,13 @@ def load_manifest_rows(split_dir: Path) -> dict[str, dict[str, Any]]:
     return rows
 
 
-def _pool_completion_mean_for_spec(tensor, row: dict[str, Any], spec: ResolvedLayerSpec) -> np.ndarray:  # noqa: ANN001
+def _pool_completion_mean_for_spec(
+    tensor,
+    row: dict[str, Any],
+    spec: ResolvedLayerSpec,
+    *,
+    assume_completion_only: bool = False,
+) -> np.ndarray:  # noqa: ANN001
     import torch
 
     if tensor.dim() != 3:
@@ -277,20 +283,28 @@ def _pool_completion_mean_for_spec(tensor, row: dict[str, Any], spec: ResolvedLa
     tensor_len = int(tensor.shape[1])
     if end > tensor_len:
         original_length = int(row.get("generation_length") or 0)
-        if original_length <= 0:
+        if assume_completion_only:
+            start = 0
+            end = tensor_len
+        elif original_length <= 0:
             raise ValueError(
                 f"Completion bound {end} exceeds token length {tensor_len} for sample {row.get('id')} "
                 "and manifest generation_length is missing"
             )
-        if original_length < end:
-            raise ValueError(
-                f"Completion bound {end} exceeds manifest generation_length {original_length} "
-                f"for sample {row.get('id')}"
-            )
-        start = int(np.floor(start / original_length * tensor_len))
-        end = int(np.ceil(end / original_length * tensor_len))
-        start = max(0, min(start, tensor_len - 1))
-        end = max(start + 1, min(end, tensor_len))
+        elif original_length < end:
+            if assume_completion_only:
+                start = 0
+                end = tensor_len
+            else:
+                raise ValueError(
+                    f"Completion bound {end} exceeds manifest generation_length {original_length} "
+                    f"for sample {row.get('id')}"
+                )
+        else:
+            start = int(np.floor(start / original_length * tensor_len))
+            end = int(np.ceil(end / original_length * tensor_len))
+            start = max(0, min(start, tensor_len - 1))
+            end = max(start + 1, min(end, tensor_len))
 
     pooled_layers: list[torch.Tensor] = []
     for layer_index in spec.layer_indices:
@@ -307,6 +321,7 @@ def load_completion_mean_split(
 ) -> CachedSplitFeatures:
     from safetensors.torch import load_file
 
+    assume_completion_only = split_dir.parent.name.endswith("-completion")
     manifest_rows = load_manifest_rows(split_dir)
     shard_paths = sorted(split_dir.glob("shard_*.safetensors"))
     if not shard_paths:
@@ -326,7 +341,14 @@ def load_completion_mean_split(
             if label < 0:
                 continue
             for spec in resolved_specs:
-                features_by_spec[spec.key].append(_pool_completion_mean_for_spec(tensor, row, spec))
+                features_by_spec[spec.key].append(
+                    _pool_completion_mean_for_spec(
+                        tensor,
+                        row,
+                        spec,
+                        assume_completion_only=assume_completion_only,
+                    )
+                )
             sample_ids.append(str(sample_id))
             labels.append(label)
 

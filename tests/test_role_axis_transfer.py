@@ -99,7 +99,7 @@ class RoleAxisTransferTest(unittest.TestCase):
 
     def test_load_completion_mean_split_scales_manifest_bounds_for_resampled_fullprompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            split_dir = Path(tmp_dir) / "Deception-AILiar-completion" / "test"
+            split_dir = Path(tmp_dir) / "Deception-AILiar-full" / "test"
             split_dir.mkdir(parents=True)
             manifest_path = split_dir / "manifest.jsonl"
             rows = [
@@ -119,6 +119,30 @@ class RoleAxisTransferTest(unittest.TestCase):
             specs = resolve_layer_specs(1, ["1"])
             cached = load_completion_mean_split(split_dir, specs)
             expected = values[0, 32:64, :].mean(dim=0).numpy().astype(np.float32)
+            np.testing.assert_allclose(cached.features_by_spec["1"][0], expected)
+
+    def test_load_completion_mean_split_uses_full_tensor_for_completion_cache_when_manifest_bounds_are_incompatible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            split_dir = Path(tmp_dir) / "Deception-AILiar-completion" / "test"
+            split_dir.mkdir(parents=True)
+            manifest_path = split_dir / "manifest.jsonl"
+            rows = [
+                {
+                    "id": "sample-1",
+                    "label": 1,
+                    "generation_length": 227,
+                    "user_end_idx": 72,
+                    "completion_end_idx": 299,
+                }
+            ]
+            manifest_path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+            values = torch.arange(1 * 64 * 2, dtype=torch.float32).reshape(1, 64, 2)
+            save_file({"sample-1": values}, str(split_dir / "shard_0000.safetensors"))
+
+            specs = resolve_layer_specs(1, ["1"])
+            cached = load_completion_mean_split(split_dir, specs)
+            expected = values[0].mean(dim=0).numpy().astype(np.float32)
             np.testing.assert_allclose(cached.features_by_spec["1"][0], expected)
 
     def test_zero_shot_predictions_treat_negative_honest_score_as_deceptive(self) -> None:
