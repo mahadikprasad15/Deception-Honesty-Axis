@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from deception_honesty_axis.common import make_run_id, read_json, utc_now_iso
@@ -56,6 +57,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--axis-bundle-run-dir", type=Path, required=True, help="Role-axis bundle run directory.")
     parser.add_argument("--run-id", type=str, default=None, help="Optional fixed run id.")
+    parser.add_argument(
+        "--print-every",
+        type=int,
+        default=10,
+        help="Print a progress update every N newly completed combinations.",
+    )
     return parser.parse_args()
 
 
@@ -103,13 +110,49 @@ def main() -> None:
     metrics_path = results_dir / "pairwise_metrics.csv"
     score_rows_path = results_dir / "per_example_scores.jsonl"
     fit_artifacts_path = results_dir / "source_fit_artifacts.jsonl"
+    progress_path = run_root / "checkpoints" / "progress.json"
     completed_keys = read_completed_metric_keys(metrics_path)
 
     total_expected = (
         len(ZERO_SHOT_METHODS & set(transfer_config.methods)) * len(transfer_config.target_datasets) * len(resolved_specs)
         + len(TRAINED_METHODS & set(transfer_config.methods)) * len(transfer_config.target_datasets) * len(transfer_config.target_datasets) * len(resolved_specs)
     )
-    write_stage_status(run_root, "evaluate_role_axis_transfer", "running", {"expected_combinations": total_expected})
+    starting_completed = len(completed_keys)
+    run_root.joinpath("checkpoints").mkdir(parents=True, exist_ok=True)
+    write_stage_status(
+        run_root,
+        "evaluate_role_axis_transfer",
+        "running",
+        {
+            "expected_combinations": total_expected,
+            "completed_combinations": starting_completed,
+            "remaining_combinations": max(0, total_expected - starting_completed),
+        },
+    )
+    progress_path.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "expected_combinations": total_expected,
+                "completed_combinations": starting_completed,
+                "completed_this_run": 0,
+                "remaining_combinations": max(0, total_expected - starting_completed),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if starting_completed:
+        print(
+            f"[role-axis-transfer] resuming with {starting_completed}/{total_expected} "
+            "combinations already complete"
+        )
+    else:
+        print(
+            f"[role-axis-transfer] starting fresh with {total_expected} total "
+            f"combinations across {len(resolved_specs)} layer specs"
+        )
 
     split_cache: dict[tuple[str, str], Any] = {}
     scores_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -120,6 +163,7 @@ def main() -> None:
         if cached is not None:
             return cached
         split_dir = transfer_config.target_activations_root / dataset_name / split_name
+        print(f"[role-axis-transfer] loading {dataset_name}/{split_name} from {split_dir}")
         cached = load_completion_mean_split(split_dir, resolved_specs)
         split_cache[key] = cached
         return cached
@@ -144,6 +188,33 @@ def main() -> None:
         return cached
 
     completed_now = 0
+
+    def update_progress() -> None:
+        progress_payload = {
+            "state": "running",
+            "expected_combinations": total_expected,
+            "completed_combinations": len(completed_keys),
+            "completed_this_run": completed_now,
+            "remaining_combinations": max(0, total_expected - len(completed_keys)),
+        }
+        progress_path.write_text(json.dumps(progress_payload, indent=2) + "\n", encoding="utf-8")
+        write_stage_status(
+            run_root,
+            "evaluate_role_axis_transfer",
+            "running",
+            progress_payload,
+        )
+
+    def maybe_print_progress(last_row: dict[str, object]) -> None:
+        if completed_now == 1 or (args.print_every > 0 and completed_now % args.print_every == 0):
+            print(
+                f"[role-axis-transfer] {len(completed_keys)}/{total_expected} complete "
+                f"({completed_now} new this run); "
+                f"{last_row['method']} @ {last_row['layer_spec']} "
+                f"{last_row['source_dataset']} -> {last_row['target_dataset']} "
+                f"AUROC={float(last_row['auroc']):.3f}"
+            )
+
     for spec in resolved_specs:
         layer_bundle = axis_bundle["layers"][spec.key]
         for target_dataset in transfer_config.target_datasets:
@@ -170,6 +241,8 @@ def main() -> None:
                     append_csv_row(metrics_path, METRIC_FIELDS, row)
                     completed_keys.add(metric_key)
                     completed_now += 1
+                    update_progress()
+                    maybe_print_progress(row)
                     save_score_rows(
                         score_rows_path,
                         [
@@ -215,6 +288,8 @@ def main() -> None:
                     append_csv_row(metrics_path, METRIC_FIELDS, row)
                     completed_keys.add(metric_key)
                     completed_now += 1
+                    update_progress()
+                    maybe_print_progress(row)
                     save_score_rows(
                         score_rows_path,
                         [
@@ -274,6 +349,8 @@ def main() -> None:
                         append_csv_row(metrics_path, METRIC_FIELDS, row)
                         completed_keys.add(metric_key)
                         completed_now += 1
+                        update_progress()
+                        maybe_print_progress(row)
                         save_fit_artifact(
                             fit_artifacts_path,
                             {
@@ -338,6 +415,8 @@ def main() -> None:
                         append_csv_row(metrics_path, METRIC_FIELDS, row)
                         completed_keys.add(metric_key)
                         completed_now += 1
+                        update_progress()
+                        maybe_print_progress(row)
                         save_fit_artifact(
                             fit_artifacts_path,
                             {
@@ -372,17 +451,6 @@ def main() -> None:
                             ],
                         )
 
-                write_stage_status(
-                    run_root,
-                    "evaluate_role_axis_transfer",
-                    "running",
-                    {
-                        "expected_combinations": total_expected,
-                        "completed_combinations": len(completed_keys),
-                        "completed_this_run": completed_now,
-                    },
-                )
-
     metric_rows = []
     if metrics_path.exists():
         with metrics_path.open("r", encoding="utf-8", newline="") as handle:
@@ -405,7 +473,25 @@ def main() -> None:
             "heatmaps": heatmap_paths,
         },
     )
-    print(f"Wrote role-axis transfer results to {run_root}")
+    progress_path.write_text(
+        json.dumps(
+            {
+                "state": "completed",
+                "expected_combinations": total_expected,
+                "completed_combinations": len(completed_keys),
+                "completed_this_run": completed_now,
+                "remaining_combinations": max(0, total_expected - len(completed_keys)),
+                "heatmaps": heatmap_paths,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"[role-axis-transfer] completed {completed_now} new combinations "
+        f"({len(completed_keys)}/{total_expected} total); wrote results to {run_root}"
+    )
 
 
 if __name__ == "__main__":

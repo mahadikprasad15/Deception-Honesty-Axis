@@ -20,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--vectors-run-dir", type=Path, required=True, help="Role-vector run directory.")
     parser.add_argument("--run-id", type=str, default=None, help="Optional fixed run id.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Recompute even if a completed bundle already exists for this run id.",
+    )
     return parser.parse_args()
 
 
@@ -39,6 +44,21 @@ def main() -> None:
         / run_id
     )
     vectors_run_dir = args.vectors_run_dir.resolve()
+    progress_path = run_root / "checkpoints" / "progress.json"
+    bundle_path = run_root / "results" / "axis_bundle.pt"
+
+    if bundle_path.exists() and not args.force:
+        write_stage_status(
+            run_root,
+            "build_role_axis_bundle",
+            "completed",
+            {
+                "message": "Existing completed bundle found; skipping recompute.",
+                "axis_bundle": str(bundle_path),
+            },
+        )
+        print(f"[role-axis-bundle] existing bundle found at {bundle_path}; skipping")
+        return
 
     import torch
 
@@ -56,6 +76,23 @@ def main() -> None:
         },
     )
     write_stage_status(run_root, "build_role_axis_bundle", "running", {"role_count": len(role_vectors)})
+    run_root.joinpath("checkpoints").mkdir(parents=True, exist_ok=True)
+    progress_path.write_text(
+        __import__("json").dumps(
+            {
+                "state": "running",
+                "vectors_loaded": len(role_vectors),
+                "layer_specs_requested": transfer_config.layer_specs,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"[role-axis-bundle] building bundle from {vectors_run_dir} "
+        f"with {len(role_vectors)} role vectors and {len(transfer_config.layer_specs)} layer specs"
+    )
 
     bundle = build_role_axis_bundle(
         role_vectors=role_vectors,
@@ -65,6 +102,19 @@ def main() -> None:
         layer_specs=transfer_config.layer_specs,
     )
     artifacts = write_role_axis_bundle(run_root, bundle)
+    progress_path.write_text(
+        __import__("json").dumps(
+            {
+                "state": "completed",
+                "vectors_loaded": len(role_vectors),
+                "layer_specs_completed": len(bundle["resolved_layer_specs"]),
+                "axis_bundle": artifacts["axis_bundle"],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     write_stage_status(
         run_root,
         "build_role_axis_bundle",
@@ -74,7 +124,10 @@ def main() -> None:
             "artifacts": artifacts,
         },
     )
-    print(f"Wrote role-axis bundle to {run_root}")
+    print(
+        f"[role-axis-bundle] completed {len(bundle['resolved_layer_specs'])} layer specs; "
+        f"wrote bundle to {run_root}"
+    )
 
 
 if __name__ == "__main__":
