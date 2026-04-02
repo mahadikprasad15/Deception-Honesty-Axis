@@ -1,0 +1,41 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "model_slug": "meta-llama-llama-3-2-3b-instruct",
+  "variants": [
+    {
+      "label": "baseline_old",
+      "transfer_run_dir": "artifacts/runs/role-axis-transfer/meta-llama-llama-3-2-3b-instruct/assistant-axis/deception-honesty-v1/completion_mean/baseline-all-datasets-zeroshot-v1"
+    },
+    {
+      "label": "triggered_augmented",
+      "transfer_run_dir": "artifacts/runs/role-axis-transfer/meta-llama-llama-3-2-3b-instruct/assistant-axis/deception-honesty-triggered-v1/completion_mean/triggered-augmented-all-datasets-zeroshot-v1"
+    },
+    {
+      "label": "triggered_only",
+      "transfer_run_dir": "artifacts/runs/role-axis-transfer/meta-llama-llama-3-2-3b-instruct/assistant-axis/deception-honesty-triggered-only-v1/completion_mean/triggered-only-all-datasets-zeroshot-v1"
+    }
+  ],
+  "dataset_order": [
+    "Deception-AILiar-completion",
+    "Deception-ConvincingGame-completion",
+    "Deception-HarmPressureChoice-completion",
+    "Deception-InstructedDeception-completion",
+    "Deception-Mask-completion",
+    "Deception-Roleplaying-completion",
+    "Deception-ClaimsDefinitional-completion",
+    "Deception-ClaimsEvidential-completion",
+    "Deception-ClaimsFictional-completion"
+  ],
+  "methods": [
+    "contrast_zero_shot",
+    "pc1_zero_shot"
+  ],
+  "layer_specs": [
+    "7",
+    "14",
+    "21",
+    "28"
+  ]
+}

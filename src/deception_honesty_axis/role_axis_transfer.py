@@ -18,6 +18,9 @@ TRAINED_METHODS = {"contrast_logistic", "pc123_linear"}
 SUPPORTED_METHODS = ZERO_SHOT_METHODS | TRAINED_METHODS
 DATASET_LABELS = {
     "Deception-AILiar-completion": "AILiar",
+    "Deception-ClaimsDefinitional-completion": "ClaimsDef",
+    "Deception-ClaimsEvidential-completion": "ClaimsEvid",
+    "Deception-ClaimsFictional-completion": "ClaimsFict",
     "Deception-ConvincingGame-completion": "ConvGame",
     "Deception-HarmPressureChoice-completion": "HarmChoice",
     "Deception-InstructedDeception-completion": "InstrDec",
