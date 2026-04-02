@@ -286,11 +286,18 @@ def _pool_completion_mean_for_spec(
 
     if tensor.dim() != 3:
         raise ValueError(f"Expected tensor shape (L,T,D), got {tuple(tensor.shape)}")
-    if "user_end_idx" not in row or "completion_end_idx" not in row:
-        raise ValueError("Missing completion boundary metadata in manifest row")
+    user_end_value = row.get("user_end_idx")
+    completion_end_value = row.get("completion_end_idx")
+    if user_end_value is None or completion_end_value is None:
+        if assume_completion_only:
+            start = 0
+            end = int(tensor.shape[1])
+        else:
+            raise ValueError("Missing completion boundary metadata in manifest row")
+    else:
+        start = int(user_end_value)
+        end = int(completion_end_value)
 
-    start = int(row["user_end_idx"])
-    end = int(row["completion_end_idx"])
     if end <= start:
         raise ValueError(f"Invalid completion bounds [{start}, {end}) for sample {row.get('id')}")
     tensor_len = int(tensor.shape[1])
