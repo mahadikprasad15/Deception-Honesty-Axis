@@ -1,0 +1,67 @@
+{
+  "name": "deception-honesty-triggered-only-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "excuse_maker",
+    "face_saver",
+    "protector",
+    "smooth_evader",
+    "judge",
+    "validator",
+    "auditor",
+    "journalist",
+    "examiner"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true
+    },
+    {
+      "name": "excuse_maker",
+      "source": "excuse_maker.json",
+      "anchor_only": false
+    },
+    {
+      "name": "face_saver",
+      "source": "face_saver.json",
+      "anchor_only": false
+    },
+    {
+      "name": "protector",
+      "source": "protector.json",
+      "anchor_only": false
+    },
+    {
+      "name": "smooth_evader",
+      "source": "smooth_evader.json",
+      "anchor_only": false
+    },
+    {
+      "name": "judge",
+      "source": "judge.json",
+      "anchor_only": false
+    },
+    {
+      "name": "validator",
+      "source": "validator.json",
+      "anchor_only": false
+    },
+    {
+      "name": "auditor",
+      "source": "auditor.json",
+      "anchor_only": false
+    },
+    {
+      "name": "journalist",
+      "source": "journalist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "examiner",
+      "source": "examiner.json",
+      "anchor_only": false
+    }
+  ]
+}
