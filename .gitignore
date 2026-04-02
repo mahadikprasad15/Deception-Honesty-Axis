@@ -7,4 +7,12 @@ __pycache__/
 artifacts/
 data/questions/*.jsonl
 data/roles/instructions/*.json
+!data/roles/instructions/spin_doctor.json
+!data/roles/instructions/coverup_operator.json
+!data/roles/instructions/scammer.json
+!data/roles/instructions/con_artist.json
+!data/roles/instructions/excuse_maker.json
+!data/roles/instructions/face_saver.json
+!data/roles/instructions/protector.json
+!data/roles/instructions/smooth_evader.json
 !data/manifests/

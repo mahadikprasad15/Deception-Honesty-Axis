@@ -1,0 +1,103 @@
+{
+  "name": "deception-honesty-triggered-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "spy",
+    "rogue",
+    "fixer",
+    "chameleon",
+    "narcissist",
+    "criminal",
+    "excuse_maker",
+    "face_saver",
+    "protector",
+    "smooth_evader",
+    "judge",
+    "validator",
+    "auditor",
+    "journalist",
+    "examiner"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true
+    },
+    {
+      "name": "spy",
+      "source": "spy.json",
+      "anchor_only": false
+    },
+    {
+      "name": "rogue",
+      "source": "rogue.json",
+      "anchor_only": false
+    },
+    {
+      "name": "fixer",
+      "source": "fixer.json",
+      "anchor_only": false
+    },
+    {
+      "name": "chameleon",
+      "source": "chameleon.json",
+      "anchor_only": false
+    },
+    {
+      "name": "narcissist",
+      "source": "narcissist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "criminal",
+      "source": "criminal.json",
+      "anchor_only": false
+    },
+    {
+      "name": "excuse_maker",
+      "source": "excuse_maker.json",
+      "anchor_only": false
+    },
+    {
+      "name": "face_saver",
+      "source": "face_saver.json",
+      "anchor_only": false
+    },
+    {
+      "name": "protector",
+      "source": "protector.json",
+      "anchor_only": false
+    },
+    {
+      "name": "smooth_evader",
+      "source": "smooth_evader.json",
+      "anchor_only": false
+    },
+    {
+      "name": "judge",
+      "source": "judge.json",
+      "anchor_only": false
+    },
+    {
+      "name": "validator",
+      "source": "validator.json",
+      "anchor_only": false
+    },
+    {
+      "name": "auditor",
+      "source": "auditor.json",
+      "anchor_only": false
+    },
+    {
+      "name": "journalist",
+      "source": "journalist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "examiner",
+      "source": "examiner.json",
+      "anchor_only": false
+    }
+  ]
+}
