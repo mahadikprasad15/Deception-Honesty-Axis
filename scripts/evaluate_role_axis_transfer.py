@@ -217,6 +217,8 @@ def main() -> None:
                 f"AUROC={float(last_row['auroc']):.3f}"
             )
 
+    trained_methods_requested = bool(TRAINED_METHODS & set(transfer_config.methods))
+
     for spec in resolved_specs:
         layer_bundle = axis_bundle["layers"][spec.key]
         for target_dataset in transfer_config.target_datasets:
@@ -315,6 +317,9 @@ def main() -> None:
                             )
                         ],
                     )
+
+        if not trained_methods_requested:
+            continue
 
         for source_dataset in transfer_config.target_datasets:
             source_payload = get_scored_split(source_dataset, transfer_config.source_split, spec.key)
