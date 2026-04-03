@@ -1,0 +1,73 @@
+{
+  "name": "deception-honesty-v6",
+  "anchor_role": "default",
+  "pca_roles": [
+    "spy",
+    "rogue",
+    "parasite",
+    "procrastinator",
+    "judge",
+    "validator",
+    "auditor",
+    "journalist",
+    "examiner",
+    "student"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true
+    },
+    {
+      "name": "spy",
+      "source": "spy_v6.json",
+      "anchor_only": false
+    },
+    {
+      "name": "rogue",
+      "source": "rogue_v6.json",
+      "anchor_only": false
+    },
+    {
+      "name": "parasite",
+      "source": "parasite_v6.json",
+      "anchor_only": false
+    },
+    {
+      "name": "procrastinator",
+      "source": "procrastinator_v6.json",
+      "anchor_only": false
+    },
+    {
+      "name": "judge",
+      "source": "judge.json",
+      "anchor_only": false
+    },
+    {
+      "name": "validator",
+      "source": "validator.json",
+      "anchor_only": false
+    },
+    {
+      "name": "auditor",
+      "source": "auditor.json",
+      "anchor_only": false
+    },
+    {
+      "name": "journalist",
+      "source": "journalist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "examiner",
+      "source": "examiner.json",
+      "anchor_only": false
+    },
+    {
+      "name": "student",
+      "source": "student_v6.json",
+      "anchor_only": false
+    }
+  ]
+}

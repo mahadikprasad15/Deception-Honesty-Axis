@@ -7,6 +7,7 @@ __pycache__/
 artifacts/
 data/questions/*.jsonl
 !data/questions/extraction_questions_v5_selected.jsonl
+!data/questions/extraction_questions_v6_selected.jsonl
 data/roles/instructions/*.json
 !data/roles/instructions/spin_doctor.json
 !data/roles/instructions/coverup_operator.json
