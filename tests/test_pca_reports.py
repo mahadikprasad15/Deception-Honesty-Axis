@@ -41,8 +41,18 @@ class PcaReportsTest(unittest.TestCase):
             self.assertTrue((run_root / "results" / "plots" / "pc1_pc2__L14.png").exists())
             self.assertTrue((run_root / "results" / "plots" / "pc1_pc2__L21.png").exists())
             self.assertTrue((run_root / "results" / "plots" / "pc1_pc2__L28.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc1_pc3__L7.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc1_pc3__L14.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc1_pc3__L21.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc1_pc3__L28.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc2_pc3__L7.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc2_pc3__L14.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc2_pc3__L21.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pc2_pc3__L28.png").exists())
             self.assertIn("role_projection_table", outputs)
             self.assertIn("pc1_pc2_selected_layers", outputs["plots"])
+            self.assertIn("pc1_pc3_selected_layers", outputs["plots"])
+            self.assertIn("pc2_pc3_selected_layers", outputs["plots"])
 
             with (run_root / "results" / "tables" / "pc_rankings.csv").open("r", encoding="utf-8", newline="") as handle:
                 ranking_rows = list(csv.DictReader(handle))

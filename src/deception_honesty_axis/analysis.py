@@ -308,26 +308,37 @@ def write_pca_report_artifacts(
         layer_summary_rows,
     )
 
-    coordinates_pc12 = _final_layer_coordinates(layers, anchor_role, role_names, 0, 1)
-    if coordinates_pc12:
-        save_scatter_plot(plots_dir / "pc1_pc2.png", coordinates_pc12, "PC1", "PC2")
+    final_pair_paths: dict[str, str] = {}
+    selected_layer_pair_paths: dict[str, dict[str, str]] = {
+        "pc1_pc2": {},
+        "pc1_pc3": {},
+        "pc2_pc3": {},
+    }
+    for x_index, y_index, pair_name, x_label, y_label in (
+        (0, 1, "pc1_pc2", "PC1", "PC2"),
+        (0, 2, "pc1_pc3", "PC1", "PC3"),
+        (1, 2, "pc2_pc3", "PC2", "PC3"),
+    ):
+        final_coordinates = _final_layer_coordinates(layers, anchor_role, role_names, x_index, y_index)
+        if final_coordinates:
+            final_path = plots_dir / f"{pair_name}.png"
+            save_scatter_plot(final_path, final_coordinates, x_label, y_label)
+            final_pair_paths[pair_name] = str(final_path)
 
-    layer_pc12_paths: dict[str, str] = {}
-    for selected_layer in (7, 14, 21, 28):
-        selected_coordinates = _layer_coordinates(layers, anchor_role, role_names, selected_layer - 1, 0, 1)
-        if not selected_coordinates:
-            continue
-        output_path = plots_dir / f"pc1_pc2__L{selected_layer}.png"
-        save_scatter_plot(output_path, selected_coordinates, "PC1", "PC2")
-        layer_pc12_paths[f"L{selected_layer}"] = str(output_path)
-
-    coordinates_pc13 = _final_layer_coordinates(layers, anchor_role, role_names, 0, 2)
-    if coordinates_pc13:
-        save_scatter_plot(plots_dir / "pc1_pc3.png", coordinates_pc13, "PC1", "PC3")
-
-    coordinates_pc23 = _final_layer_coordinates(layers, anchor_role, role_names, 1, 2)
-    if coordinates_pc23:
-        save_scatter_plot(plots_dir / "pc2_pc3.png", coordinates_pc23, "PC2", "PC3")
+        for selected_layer in (7, 14, 21, 28):
+            selected_coordinates = _layer_coordinates(
+                layers,
+                anchor_role,
+                role_names,
+                selected_layer - 1,
+                x_index,
+                y_index,
+            )
+            if not selected_coordinates:
+                continue
+            output_path = plots_dir / f"{pair_name}__L{selected_layer}.png"
+            save_scatter_plot(output_path, selected_coordinates, x_label, y_label)
+            selected_layer_pair_paths[pair_name][f"L{selected_layer}"] = str(output_path)
 
     if max_pc_count:
         pc_labels = [f"PC{index + 1}" for index in range(max_pc_count)]
@@ -364,10 +375,12 @@ def write_pca_report_artifacts(
         "pc_rankings_table": str(tables_dir / "pc_rankings.csv"),
         "layer_summary_table": str(tables_dir / "layer_summary.csv"),
         "plots": {
-            "pc1_pc2": str(plots_dir / "pc1_pc2.png"),
-            "pc1_pc3": str(plots_dir / "pc1_pc3.png"),
-            "pc2_pc3": str(plots_dir / "pc2_pc3.png"),
-            "pc1_pc2_selected_layers": layer_pc12_paths,
+            "pc1_pc2": final_pair_paths.get("pc1_pc2", str(plots_dir / "pc1_pc2.png")),
+            "pc1_pc3": final_pair_paths.get("pc1_pc3", str(plots_dir / "pc1_pc3.png")),
+            "pc2_pc3": final_pair_paths.get("pc2_pc3", str(plots_dir / "pc2_pc3.png")),
+            "pc1_pc2_selected_layers": selected_layer_pair_paths["pc1_pc2"],
+            "pc1_pc3_selected_layers": selected_layer_pair_paths["pc1_pc3"],
+            "pc2_pc3_selected_layers": selected_layer_pair_paths["pc2_pc3"],
             "default_abs_projection_heatmap": str(plots_dir / "default_abs_projection_heatmap.png"),
             "contrast_cosine_heatmap": str(plots_dir / "contrast_cosine_heatmap.png"),
         },

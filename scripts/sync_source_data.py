@@ -8,6 +8,7 @@ from pathlib import Path
 
 from deception_honesty_axis.common import ensure_dir, sha256_file, utc_now_iso, write_json
 from deception_honesty_axis.config import load_config
+from deception_honesty_axis.source_curation import materialize_curated_variant_sources
 from deception_honesty_axis.work_units import load_role_manifest
 
 
@@ -51,17 +52,35 @@ def main() -> None:
     args = parse_args()
     config = load_config(args.config.resolve())
     role_manifest = load_role_manifest(config.role_manifest_path)
+    curated_generated_paths: set[str] = set()
+    entries: list[dict[str, str]] = []
 
-    entries = [
-        download(
-            f"{RAW_BASE}/data/extraction_questions.jsonl",
-            config.question_file_path,
+    curated_spec_value = config.raw.get("data", {}).get("source_variant_spec_file")
+    if curated_spec_value:
+        curated_spec_path = Path(curated_spec_value)
+        if not curated_spec_path.is_absolute():
+            curated_spec_path = (config.repo_root / curated_spec_path).resolve()
+        curated_payload = materialize_curated_variant_sources(
+            curated_spec_path,
+            config.repo_root,
             force=args.force,
         )
-    ]
+        entries.extend(curated_payload["files"])
+        curated_generated_paths = set(curated_payload["generated_paths"])
+    else:
+        entries.append(
+            download(
+                f"{RAW_BASE}/data/extraction_questions.jsonl",
+                config.question_file_path,
+                force=args.force,
+            )
+        )
+
     for role_entry in role_manifest["roles"]:
         source_name = role_entry.get("source") or Path(role_entry["instruction_file"]).name
         instruction_path = config.repo_root / "data" / "roles" / "instructions" / source_name
+        if str(instruction_path.resolve()) in curated_generated_paths:
+            continue
         entries.append(
             download(
                 f"{RAW_BASE}/data/roles/instructions/{instruction_path.name}",
@@ -76,6 +95,7 @@ def main() -> None:
             "upstream_repo": "https://github.com/safety-research/assistant-axis",
             "fetched_at": utc_now_iso(),
             "config_path": str(config.path),
+            "curated_source_spec_file": str(curated_spec_value) if curated_spec_value else None,
             "files": entries,
         },
     )
