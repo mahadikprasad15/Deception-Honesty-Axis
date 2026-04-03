@@ -10,6 +10,7 @@ from deception_honesty_axis.common import read_json
 from deception_honesty_axis.metadata import write_stage_status
 from deception_honesty_axis.role_axis_transfer import (
     save_metric_heatmaps,
+    save_zero_shot_grouped_barplots,
     save_transfer_lineplots,
     write_fit_summary_csv,
     write_summary_csv,
@@ -105,6 +106,13 @@ def main() -> None:
         layer_specs,
         datasets,
     )
+    grouped_bar_paths = save_zero_shot_grouped_barplots(
+        results_dir / "plots",
+        metric_rows,
+        methods,
+        layer_specs,
+        datasets,
+    )
 
     payload = {
         "metric_rows": len(metric_rows),
@@ -113,11 +121,13 @@ def main() -> None:
         "datasets": datasets,
         "heatmaps": heatmap_paths,
         "lineplots": lineplot_paths,
+        "grouped_bar_plots": grouped_bar_paths,
     }
     write_stage_status(run_root, "postprocess_role_axis_transfer", "completed", payload)
     print(
         f"[role-axis-transfer-postprocess] wrote summary_by_method.csv, fit_summary.csv, "
-        f"{len(heatmap_paths)} heatmaps, and {len(lineplot_paths)} line plots under {results_dir}"
+        f"{len(heatmap_paths)} heatmaps, {len(lineplot_paths)} line plots, and "
+        f"{len(grouped_bar_paths)} grouped-bar plots under {results_dir}"
     )
 
 

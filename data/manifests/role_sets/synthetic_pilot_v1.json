@@ -1,0 +1,97 @@
+{
+  "name": "synthetic-pilot-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "operator",
+    "schemer",
+    "opportunist",
+    "social_climber",
+    "survivor",
+    "handler",
+    "broker",
+    "impression_manager",
+    "investigator",
+    "referee",
+    "witness",
+    "ethicist",
+    "editor",
+    "ombudsman"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true
+    },
+    {
+      "name": "operator",
+      "source": "operator.json",
+      "anchor_only": false
+    },
+    {
+      "name": "schemer",
+      "source": "schemer.json",
+      "anchor_only": false
+    },
+    {
+      "name": "opportunist",
+      "source": "opportunist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "social_climber",
+      "source": "social_climber.json",
+      "anchor_only": false
+    },
+    {
+      "name": "survivor",
+      "source": "survivor.json",
+      "anchor_only": false
+    },
+    {
+      "name": "handler",
+      "source": "handler.json",
+      "anchor_only": false
+    },
+    {
+      "name": "broker",
+      "source": "broker.json",
+      "anchor_only": false
+    },
+    {
+      "name": "impression_manager",
+      "source": "impression_manager.json",
+      "anchor_only": false
+    },
+    {
+      "name": "investigator",
+      "source": "investigator.json",
+      "anchor_only": false
+    },
+    {
+      "name": "referee",
+      "source": "referee.json",
+      "anchor_only": false
+    },
+    {
+      "name": "witness",
+      "source": "witness.json",
+      "anchor_only": false
+    },
+    {
+      "name": "ethicist",
+      "source": "ethicist.json",
+      "anchor_only": false
+    },
+    {
+      "name": "editor",
+      "source": "editor.json",
+      "anchor_only": false
+    },
+    {
+      "name": "ombudsman",
+      "source": "ombudsman.json",
+      "anchor_only": false
+    }
+  ]
+}

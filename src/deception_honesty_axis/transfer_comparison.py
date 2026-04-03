@@ -24,7 +24,7 @@ DEFAULT_DATASET_ORDER = [
     "Deception-ClaimsEvidential-completion",
     "Deception-ClaimsFictional-completion",
 ]
-DEFAULT_METHODS = ["contrast_zero_shot", "pc1_zero_shot"]
+DEFAULT_METHODS = ["contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot"]
 DEFAULT_LAYER_SPECS = ["7", "14", "21", "28"]
 DEFAULT_VARIANT_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 

@@ -23,6 +23,7 @@ from deception_honesty_axis.role_axis_transfer import (
     save_fit_artifact,
     save_metric_heatmaps,
     save_score_rows,
+    save_zero_shot_grouped_barplots,
     save_transfer_lineplots,
     scores_for_layer,
     write_fit_summary_csv,
@@ -47,6 +48,14 @@ METRIC_FIELDS = [
     "count",
     "completed_at",
 ]
+
+
+ZERO_SHOT_METHOD_SPECS = {
+    "contrast_zero_shot": ("contrast", None),
+    "pc1_zero_shot": ("pc_scores", 0),
+    "pc2_zero_shot": ("pc_scores", 1),
+    "pc3_zero_shot": ("pc_scores", 2),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -223,100 +232,64 @@ def main() -> None:
         layer_bundle = axis_bundle["layers"][spec.key]
         for target_dataset in transfer_config.target_datasets:
             target_payload = get_scored_split(target_dataset, transfer_config.eval_split, spec.key)
+            for method_name in transfer_config.methods:
+                if method_name not in ZERO_SHOT_METHOD_SPECS:
+                    continue
+                metric_key = (method_name, spec.key, ZERO_SHOT_SOURCE, target_dataset)
+                if metric_key in completed_keys:
+                    continue
 
-            if "contrast_zero_shot" in transfer_config.methods:
-                metric_key = ("contrast_zero_shot", spec.key, ZERO_SHOT_SOURCE, target_dataset)
-                if metric_key not in completed_keys:
-                    metrics, deceptive_scores, probabilities = evaluate_zero_shot(
-                        target_payload["labels"],
-                        target_payload["contrast"],
-                    )
-                    row = {
-                        "method": "contrast_zero_shot",
-                        "layer_spec": spec.key,
-                        "layer_label": spec.label,
-                        "source_dataset": ZERO_SHOT_SOURCE,
-                        "target_dataset": target_dataset,
-                        "train_split": "",
-                        "eval_split": transfer_config.eval_split,
-                        "completed_at": utc_now_iso(),
-                        **metrics,
-                    }
-                    append_csv_row(metrics_path, METRIC_FIELDS, row)
-                    completed_keys.add(metric_key)
-                    completed_now += 1
-                    update_progress()
-                    maybe_print_progress(row)
-                    save_score_rows(
-                        score_rows_path,
-                        [
-                            {
-                                "method": "contrast_zero_shot",
-                                "layer_spec": spec.key,
-                                "source_dataset": ZERO_SHOT_SOURCE,
-                                "target_dataset": target_dataset,
-                                "sample_id": sample_id,
-                                "label": int(label),
-                                "deceptive_score": float(score),
-                                "probability": float(probability),
-                                "prediction": int(probability >= 0.5),
-                            }
-                            for sample_id, label, score, probability in zip(
-                                target_payload["sample_ids"],
-                                target_payload["labels"],
-                                deceptive_scores,
-                                probabilities,
-                                strict=False,
-                            )
-                        ],
-                    )
+                score_key, component_index = ZERO_SHOT_METHOD_SPECS[method_name]
+                if component_index is None:
+                    honest_like_scores = target_payload[score_key]
+                else:
+                    if target_payload[score_key].shape[1] <= component_index:
+                        continue
+                    honest_like_scores = target_payload[score_key][:, component_index]
 
-            if "pc1_zero_shot" in transfer_config.methods:
-                metric_key = ("pc1_zero_shot", spec.key, ZERO_SHOT_SOURCE, target_dataset)
-                if metric_key not in completed_keys:
-                    metrics, deceptive_scores, probabilities = evaluate_zero_shot(
-                        target_payload["labels"],
-                        target_payload["pc_scores"][:, 0],
-                    )
-                    row = {
-                        "method": "pc1_zero_shot",
-                        "layer_spec": spec.key,
-                        "layer_label": spec.label,
-                        "source_dataset": ZERO_SHOT_SOURCE,
-                        "target_dataset": target_dataset,
-                        "train_split": "",
-                        "eval_split": transfer_config.eval_split,
-                        "completed_at": utc_now_iso(),
-                        **metrics,
-                    }
-                    append_csv_row(metrics_path, METRIC_FIELDS, row)
-                    completed_keys.add(metric_key)
-                    completed_now += 1
-                    update_progress()
-                    maybe_print_progress(row)
-                    save_score_rows(
-                        score_rows_path,
-                        [
-                            {
-                                "method": "pc1_zero_shot",
-                                "layer_spec": spec.key,
-                                "source_dataset": ZERO_SHOT_SOURCE,
-                                "target_dataset": target_dataset,
-                                "sample_id": sample_id,
-                                "label": int(label),
-                                "deceptive_score": float(score),
-                                "probability": float(probability),
-                                "prediction": int(probability >= 0.5),
-                            }
-                            for sample_id, label, score, probability in zip(
-                                target_payload["sample_ids"],
-                                target_payload["labels"],
-                                deceptive_scores,
-                                probabilities,
-                                strict=False,
-                            )
-                        ],
-                    )
+                metrics, deceptive_scores, probabilities = evaluate_zero_shot(
+                    target_payload["labels"],
+                    honest_like_scores,
+                )
+                row = {
+                    "method": method_name,
+                    "layer_spec": spec.key,
+                    "layer_label": spec.label,
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": target_dataset,
+                    "train_split": "",
+                    "eval_split": transfer_config.eval_split,
+                    "completed_at": utc_now_iso(),
+                    **metrics,
+                }
+                append_csv_row(metrics_path, METRIC_FIELDS, row)
+                completed_keys.add(metric_key)
+                completed_now += 1
+                update_progress()
+                maybe_print_progress(row)
+                save_score_rows(
+                    score_rows_path,
+                    [
+                        {
+                            "method": method_name,
+                            "layer_spec": spec.key,
+                            "source_dataset": ZERO_SHOT_SOURCE,
+                            "target_dataset": target_dataset,
+                            "sample_id": sample_id,
+                            "label": int(label),
+                            "deceptive_score": float(score),
+                            "probability": float(probability),
+                            "prediction": int(probability >= 0.5),
+                        }
+                        for sample_id, label, score, probability in zip(
+                            target_payload["sample_ids"],
+                            target_payload["labels"],
+                            deceptive_scores,
+                            probabilities,
+                            strict=False,
+                        )
+                    ],
+                )
 
         if not trained_methods_requested:
             continue
@@ -477,6 +450,13 @@ def main() -> None:
         [spec.key for spec in resolved_specs],
         transfer_config.target_datasets,
     )
+    grouped_bar_paths = save_zero_shot_grouped_barplots(
+        results_dir / "plots",
+        metric_rows,
+        transfer_config.methods,
+        [spec.key for spec in resolved_specs],
+        transfer_config.target_datasets,
+    )
     write_stage_status(
         run_root,
         "evaluate_role_axis_transfer",
@@ -486,6 +466,7 @@ def main() -> None:
             "completed_combinations": len(completed_keys),
             "heatmaps": heatmap_paths,
             "lineplots": lineplot_paths,
+            "grouped_bar_plots": grouped_bar_paths,
         },
     )
     progress_path.write_text(
@@ -498,6 +479,7 @@ def main() -> None:
                 "remaining_combinations": max(0, total_expected - len(completed_keys)),
                 "heatmaps": heatmap_paths,
                 "lineplots": lineplot_paths,
+                "grouped_bar_plots": grouped_bar_paths,
             },
             indent=2,
         )

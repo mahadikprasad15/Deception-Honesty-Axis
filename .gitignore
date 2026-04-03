@@ -8,6 +8,7 @@ artifacts/
 data/questions/*.jsonl
 !data/questions/extraction_questions_v5_selected.jsonl
 !data/questions/extraction_questions_v6_selected.jsonl
+!data/questions/synthetic_pilot_v1_questions.jsonl
 data/roles/instructions/*.json
 !data/roles/instructions/spin_doctor.json
 !data/roles/instructions/coverup_operator.json
@@ -17,4 +18,18 @@ data/roles/instructions/*.json
 !data/roles/instructions/face_saver.json
 !data/roles/instructions/protector.json
 !data/roles/instructions/smooth_evader.json
+!data/roles/instructions/operator.json
+!data/roles/instructions/schemer.json
+!data/roles/instructions/opportunist.json
+!data/roles/instructions/social_climber.json
+!data/roles/instructions/survivor.json
+!data/roles/instructions/handler.json
+!data/roles/instructions/broker.json
+!data/roles/instructions/impression_manager.json
+!data/roles/instructions/investigator.json
+!data/roles/instructions/referee.json
+!data/roles/instructions/witness.json
+!data/roles/instructions/ethicist.json
+!data/roles/instructions/editor.json
+!data/roles/instructions/ombudsman.json
 !data/manifests/

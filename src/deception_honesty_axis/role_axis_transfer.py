@@ -13,7 +13,7 @@ from deception_honesty_axis.common import append_jsonl, ensure_dir, load_jsonl, 
 
 
 ZERO_SHOT_SOURCE = "__zero_shot__"
-ZERO_SHOT_METHODS = {"contrast_zero_shot", "pc1_zero_shot"}
+ZERO_SHOT_METHODS = {"contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot"}
 TRAINED_METHODS = {"contrast_logistic", "pc123_linear"}
 SUPPORTED_METHODS = ZERO_SHOT_METHODS | TRAINED_METHODS
 DATASET_LABELS = {
@@ -28,6 +28,24 @@ DATASET_LABELS = {
     "Deception-Mask-completion": "Mask",
     "Deception-Roleplaying-completion": "Roleplay",
     ZERO_SHOT_SOURCE: "ZeroShot",
+}
+
+METHOD_LABELS = {
+    "contrast_zero_shot": "Contrast Zero-Shot",
+    "pc1_zero_shot": "PC1 Zero-Shot",
+    "pc2_zero_shot": "PC2 Zero-Shot",
+    "pc3_zero_shot": "PC3 Zero-Shot",
+    "contrast_logistic": "Contrast Logistic",
+    "pc123_linear": "PC123 Mean Cross-Source",
+}
+
+METHOD_COLORS = {
+    "contrast_zero_shot": "#0b7285",
+    "pc1_zero_shot": "#e67700",
+    "pc2_zero_shot": "#5f3dc4",
+    "pc3_zero_shot": "#c2255c",
+    "contrast_logistic": "#1c7ed6",
+    "pc123_linear": "#c2255c",
 }
 
 
@@ -152,9 +170,15 @@ def build_role_axis_bundle(
         pca = run_centered_pca(layer_role_vectors, comparison_roles)
         components = _top_components(pca["components"])
         pc_signs = [1.0] * int(components.shape[0])
-        if components.shape[0] > 0 and cosine_similarity(components[0], contrast_axis) < 0.0:
-            components[0] = -components[0]
-            pc_signs[0] = -1.0
+
+        centered_honest = honest_mean - pca["mean_vector"]
+        centered_deceptive = deceptive_mean - pca["mean_vector"]
+        for component_index in range(int(components.shape[0])):
+            honest_projection = float(torch.dot(centered_honest, components[component_index]))
+            deceptive_projection = float(torch.dot(centered_deceptive, components[component_index]))
+            if honest_projection < deceptive_projection:
+                components[component_index] = -components[component_index]
+                pc_signs[component_index] = -1.0
 
         centered_anchor = layer_role_vectors[anchor_role] - pca["mean_vector"]
         anchor_projection = centered_anchor @ components.T
@@ -688,26 +712,20 @@ def save_transfer_lineplots(
     rows = [
         row
         for row in metric_rows
-        if row["method"] in {"contrast_zero_shot", "pc1_zero_shot", "pc123_linear"}
+        if row["method"] in {"contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot", "pc123_linear"}
     ]
     if not rows:
         return []
 
     layer_order = {layer_spec: idx for idx, layer_spec in enumerate(layer_specs)}
-    method_labels = {
-        "contrast_zero_shot": "Contrast Zero-Shot",
-        "pc1_zero_shot": "PC1 Zero-Shot",
-        "pc123_linear": "PC123 Mean Cross-Source",
-    }
-    method_colors = {
-        "contrast_zero_shot": "#0b7285",
-        "pc1_zero_shot": "#e67700",
-        "pc123_linear": "#c2255c",
-    }
+    method_labels = METHOD_LABELS
+    method_colors = METHOD_COLORS
     plot_records: dict[str, dict[str, dict[str, float]]] = {
         dataset: {
             "contrast_zero_shot": {},
             "pc1_zero_shot": {},
+            "pc2_zero_shot": {},
+            "pc3_zero_shot": {},
             "pc123_linear": {},
         }
         for dataset in datasets
@@ -758,7 +776,7 @@ def save_transfer_lineplots(
         ax.set_ylim(0.0, 1.0)
 
     for ax, dataset in zip(axes_array, datasets, strict=False):
-        for method in ("contrast_zero_shot", "pc1_zero_shot", "pc123_linear"):
+        for method in ("contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot", "pc123_linear"):
             series = plot_records[dataset][method]
             x_values = [layer_order[layer_spec] for layer_spec in layer_specs if layer_spec in series]
             y_values = [series[layer_spec] for layer_spec in layer_specs if layer_spec in series]
@@ -786,7 +804,7 @@ def save_transfer_lineplots(
             handles,
             labels,
             loc="upper center",
-            ncol=3,
+            ncol=min(5, len(handles)),
             frameon=False,
             fontsize=12,
             bbox_to_anchor=(0.5, 1.02),
@@ -803,6 +821,113 @@ def save_transfer_lineplots(
     plt.close(fig)
     figure_paths.append(str(path))
     return figure_paths
+
+
+def save_zero_shot_grouped_barplots(
+    output_dir: Path,
+    metric_rows: list[dict[str, Any]],
+    methods: list[str],
+    layer_specs: list[str],
+    datasets: list[str],
+    *,
+    metric_name: str = "auroc",
+) -> list[str]:
+    import matplotlib.pyplot as plt
+
+    ensure_dir(output_dir)
+    zero_shot_methods = [method for method in methods if method in ZERO_SHOT_METHODS]
+    if not zero_shot_methods:
+        return []
+
+    records = [
+        row
+        for row in metric_rows
+        if row["source_dataset"] == ZERO_SHOT_SOURCE
+        and row["method"] in zero_shot_methods
+        and row["layer_spec"] in layer_specs
+        and row["target_dataset"] in datasets
+    ]
+    if not records:
+        return []
+
+    value_index = {
+        (str(row["method"]), str(row["layer_spec"]), str(row["target_dataset"])): float(row[metric_name])
+        for row in records
+        if row.get(metric_name) not in (None, "")
+    }
+    dataset_labels = [DATASET_LABELS.get(dataset, dataset) for dataset in datasets]
+    x_positions = np.arange(len(datasets), dtype=np.float32)
+    width = 0.82 / max(1, len(zero_shot_methods))
+    output_paths: list[str] = []
+
+    for layer_spec in layer_specs:
+        fig, ax = plt.subplots(figsize=(max(16, len(datasets) * 1.8), 6.5))
+        for method_index, method in enumerate(zero_shot_methods):
+            offsets = x_positions - 0.41 + width * 0.5 + method_index * width
+            values = [value_index.get((method, layer_spec, dataset), np.nan) for dataset in datasets]
+            bars = ax.bar(
+                offsets,
+                values,
+                width=width,
+                color=METHOD_COLORS.get(method, "#495057"),
+                label=METHOD_LABELS.get(method, method),
+            )
+            for bar, value in zip(bars, values, strict=False):
+                if np.isnan(value):
+                    continue
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    value + 0.01,
+                    f"{value:.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    rotation=90,
+                )
+
+        ax.set_title(f"Zero-Shot {metric_name.upper()} by Dataset @ Layer {layer_spec}")
+        ax.set_ylabel(metric_name.upper())
+        ax.set_xlabel("Dataset")
+        ax.set_xticks(x_positions, dataset_labels, rotation=30, ha="right")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(axis="y", alpha=0.25)
+        ax.legend(ncol=min(4, len(zero_shot_methods)), frameon=False)
+        fig.tight_layout()
+        path = output_dir / f"zero_shot_grouped_bars__{metric_name}__{layer_spec}.png"
+        fig.savefig(path, dpi=220, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        output_paths.append(str(path))
+
+    fig, axes = plt.subplots(len(layer_specs), 1, figsize=(max(16, len(datasets) * 1.8), max(5 * len(layer_specs), 8)))
+    axes_array = np.atleast_1d(axes).reshape(-1)
+    for ax, layer_spec in zip(axes_array, layer_specs, strict=False):
+        for method_index, method in enumerate(zero_shot_methods):
+            offsets = x_positions - 0.41 + width * 0.5 + method_index * width
+            values = [value_index.get((method, layer_spec, dataset), np.nan) for dataset in datasets]
+            ax.bar(
+                offsets,
+                values,
+                width=width,
+                color=METHOD_COLORS.get(method, "#495057"),
+                label=METHOD_LABELS.get(method, method),
+            )
+        ax.set_title(f"Layer {layer_spec}")
+        ax.set_ylabel(metric_name.upper())
+        ax.set_xticks(x_positions, dataset_labels, rotation=30, ha="right")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(axis="y", alpha=0.25)
+
+    if len(axes_array):
+        handles, labels = axes_array[0].get_legend_handles_labels()
+        if handles:
+            fig.legend(handles, labels, loc="upper center", ncol=min(4, len(zero_shot_methods)), frameon=False)
+    fig.suptitle(f"Zero-Shot {metric_name.upper()} by Dataset and Layer", fontsize=18, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    overview_path = output_dir / f"zero_shot_grouped_bars__{metric_name}__overview.png"
+    fig.savefig(overview_path, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    output_paths.append(str(overview_path))
+    return output_paths
 
 
 def save_fit_artifact(path: Path, record: dict[str, Any]) -> None:
