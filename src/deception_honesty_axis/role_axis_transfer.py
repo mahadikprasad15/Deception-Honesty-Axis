@@ -455,7 +455,8 @@ def evaluate_zero_shot(
 ) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
     deceptive_scores = -honest_like_scores
     predictions = (deceptive_scores > 0.0).astype(np.int64)
-    probabilities = 1.0 / (1.0 + np.exp(-deceptive_scores))
+    bounded_scores = np.clip(deceptive_scores, -60.0, 60.0)
+    probabilities = 1.0 / (1.0 + np.exp(-bounded_scores))
     metrics = compute_binary_metrics(labels, deceptive_scores, predictions, probabilities=probabilities)
     return metrics, deceptive_scores, probabilities
 

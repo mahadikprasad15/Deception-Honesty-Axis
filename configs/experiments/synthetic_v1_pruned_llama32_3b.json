@@ -1,0 +1,46 @@
+{
+  "experiment_name": "synthetic-v1-pruned-pca",
+  "model": {
+    "id": "meta-llama/Llama-3.2-3B-Instruct",
+    "dtype": "float16",
+    "device": "auto",
+    "trust_remote_code": false,
+    "generation": {
+      "max_new_tokens": 256,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "do_sample": true
+    }
+  },
+  "data": {
+    "question_file": "data/questions/synthetic_v1_pruned_questions.jsonl",
+    "role_manifest_file": "data/manifests/role_sets/synthetic_v1_pruned.json"
+  },
+  "subset": {
+    "instruction_selection": "first_n",
+    "instruction_count": 2,
+    "question_selection": "first_n",
+    "question_count": 32
+  },
+  "artifacts": {
+    "root": "artifacts",
+    "dataset_name": "assistant-axis",
+    "analysis_variant": "center-only",
+    "corpus_name": "synthetic-v1-pruned"
+  },
+  "saving": {
+    "rollout_shard_size": 100,
+    "activation_shard_size": 32,
+    "save_every": 25
+  },
+  "analysis": {
+    "filter_name": "all-responses",
+    "pooling": "mean_response",
+    "anchor_role": "default"
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts",
+    "root_prefix": "deception-honesty-axis",
+    "private": true
+  }
+}
