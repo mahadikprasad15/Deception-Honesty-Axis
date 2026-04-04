@@ -28,6 +28,7 @@ data/roles/instructions/*.json
 !data/roles/instructions/survivor.json
 !data/roles/instructions/handler.json
 !data/roles/instructions/broker.json
+!data/roles/instructions/fixer.json
 !data/roles/instructions/impression_manager.json
 !data/roles/instructions/investigator.json
 !data/roles/instructions/referee.json
