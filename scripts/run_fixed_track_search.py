@@ -73,6 +73,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional override to evaluate only selected target datasets. Can be passed multiple times.",
     )
+    parser.add_argument(
+        "--objective",
+        type=str,
+        default="mean_delta_first",
+        choices=["mean_delta_first", "threshold_first"],
+        help="Objective ordering for greedy selection.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.70,
+        help="Threshold used by the threshold_first objective.",
+    )
     return parser.parse_args()
 
 
@@ -92,8 +105,14 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
             handle.write("\n")
 
 
-def fixed_track_run_root(experiment_config, method: str, layer_spec: str, run_id: str) -> Path:  # noqa: ANN001
-    track_slug = f"{method}__layer-{layer_spec}"
+def objective_slug(objective: str, threshold: float) -> str:
+    if objective == "threshold_first":
+        return f"threshold-first__thr-{threshold:.2f}".replace(".", "p")
+    return "mean-delta-first"
+
+
+def fixed_track_run_root(experiment_config, method: str, layer_spec: str, run_id: str, objective: str, threshold: float) -> Path:  # noqa: ANN001
+    track_slug = f"{method}__layer-{layer_spec}__objective-{objective_slug(objective, threshold)}"
     root = (
         experiment_config.artifact_root
         / "runs"
@@ -108,7 +127,17 @@ def fixed_track_run_root(experiment_config, method: str, layer_spec: str, run_id
     return root
 
 
-def score_tuple(score: dict[str, float | int]) -> tuple[float | int, ...]:
+def score_tuple(score: dict[str, float | int], objective: str) -> tuple[float | int, ...]:
+    if objective == "threshold_first":
+        return (
+            int(score["count_gt_threshold"]),
+            int(score["count_ge_threshold"]),
+            float(score["clipped_threshold_sum"]),
+            int(score["improved_count"]),
+            int(score["nonnegative_count"]),
+            float(score["mean_auroc"]),
+            float(score["mean_delta"]),
+        )
     return (
         int(score["improved_count"]),
         int(score["nonnegative_count"]),
@@ -173,6 +202,8 @@ def save_selected_probe_snapshot(
     deceptive_roles: list[str],
     method: str,
     layer_spec: str,
+    objective: str,
+    threshold: float,
     role_manifest_path: Path,
     question_file_path: Path,
 ) -> None:
@@ -182,6 +213,7 @@ def save_selected_probe_snapshot(
     payload["role_axis"]["deceptive_roles"] = deceptive_roles
     payload["role_axis"]["layer_specs"] = [layer_spec]
     payload["evaluation"]["methods"] = [method]
+    payload["selection"] = {"objective": objective, "threshold": threshold}
     payload["selected_inputs"] = {
         "role_manifest_file": str(role_manifest_path),
         "question_file": str(question_file_path),
@@ -259,17 +291,23 @@ def plot_deltas(path: Path, final_rows: list[dict[str, Any]]) -> None:
     plt.close(fig)
 
 
-def plot_trajectory(path: Path, history_rows: list[dict[str, Any]]) -> None:
+def plot_trajectory(path: Path, history_rows: list[dict[str, Any]], objective: str, threshold: float) -> None:
     import matplotlib.pyplot as plt
 
     steps = [int(row["step"]) for row in history_rows]
-    improved = [int(row["improved_count"]) for row in history_rows]
-    mean_delta = [float(row["mean_delta"]) for row in history_rows]
     mean_auroc = [float(row["mean_auroc"]) for row in history_rows]
 
     fig, ax = plt.subplots(figsize=(10, 4.5))
-    ax.plot(steps, improved, marker="o", color="#2b8a3e", label="datasets improved")
-    ax.plot(steps, mean_delta, marker="o", color="#c92a2a", label="mean delta")
+    if objective == "threshold_first":
+        gt_threshold = [int(row["count_gt_threshold"]) for row in history_rows]
+        clipped_sum = [float(row["clipped_threshold_sum"]) for row in history_rows]
+        ax.plot(steps, gt_threshold, marker="o", color="#2b8a3e", label=f"datasets > {threshold:.2f}")
+        ax.plot(steps, clipped_sum, marker="o", color="#c92a2a", label=f"clipped sum @ {threshold:.2f}")
+    else:
+        improved = [int(row["improved_count"]) for row in history_rows]
+        mean_delta = [float(row["mean_delta"]) for row in history_rows]
+        ax.plot(steps, improved, marker="o", color="#2b8a3e", label="datasets improved")
+        ax.plot(steps, mean_delta, marker="o", color="#c92a2a", label="mean delta")
     ax.plot(steps, mean_auroc, marker="o", color="#0b7285", label="mean AUROC")
     ax.set_xlabel("Greedy step")
     ax.set_title("Fixed-Track Search Trajectory")
@@ -290,7 +328,7 @@ def main() -> None:
         raise ValueError(f"Requested layer {args.layer_spec} is not present in {transfer_config.path}")
 
     run_id = args.run_id or make_run_id()
-    run_root = fixed_track_run_root(experiment_config, args.method, args.layer_spec, run_id)
+    run_root = fixed_track_run_root(experiment_config, args.method, args.layer_spec, run_id, args.objective, args.threshold)
     checkpoints_dir = run_root / "checkpoints"
     results_dir = run_root / "results"
     plots_dir = run_root / "plots"
@@ -444,8 +482,12 @@ def main() -> None:
     baseline_by_dataset = {row["dataset"]: float(row["auroc"]) for row in baseline_result["per_dataset"]}
 
     def score_result(result: dict[str, Any]) -> dict[str, Any]:
+        aurocs = [float(row["auroc"]) for row in result["per_dataset"]]
         deltas = [float(row["auroc"]) - baseline_by_dataset[row["dataset"]] for row in result["per_dataset"]]
         return {
+            "count_gt_threshold": int(sum(value > args.threshold for value in aurocs)),
+            "count_ge_threshold": int(sum(value >= args.threshold for value in aurocs)),
+            "clipped_threshold_sum": float(np.sum([min(value, args.threshold) for value in aurocs])),
             "improved_count": int(sum(delta > 1e-6 for delta in deltas)),
             "nonnegative_count": int(sum(delta >= -1e-6 for delta in deltas)),
             "mean_delta": float(np.mean(deltas)),
@@ -499,6 +541,8 @@ def main() -> None:
             "corpus_root": str(corpus_root),
             "method": args.method,
             "layer_spec": resolved_spec.key,
+            "objective": args.objective,
+            "threshold": args.threshold,
             "target_datasets": target_datasets,
             "honest_pool": honest_pool,
             "deceptive_pool": deceptive_pool,
@@ -516,6 +560,8 @@ def main() -> None:
             "step": len(history_rows) - 1,
             "method": args.method,
             "layer_spec": resolved_spec.key,
+            "objective": args.objective,
+            "threshold": args.threshold,
             "honest_count": len(current_honest),
             "deceptive_count": len(current_deceptive),
             "question_count": len(current_questions),
@@ -547,6 +593,7 @@ def main() -> None:
     print(
         "[fixed-track-search] baseline "
         f"method={args.method} layer={resolved_spec.key} "
+        f"objective={args.objective} threshold={args.threshold:.2f} "
         f"honest={len(honest_pool)} deceptive={len(deceptive_pool)} questions={len(question_order)} "
         f"mean_auroc={baseline_result['mean_auroc']:.3f}"
     )
@@ -557,6 +604,8 @@ def main() -> None:
             {
                 "method": args.method,
                 "layer_spec": resolved_spec.key,
+                "objective": args.objective,
+                "threshold": args.threshold,
                 "current_honest_roles": current_honest,
                 "current_deceptive_roles": current_deceptive,
                 "current_question_ids": current_questions,
@@ -569,6 +618,8 @@ def main() -> None:
             {
                 "state": "running",
                 "step": len(history_rows) - 1,
+                "objective": args.objective,
+                "threshold": args.threshold,
                 "current_score": current_score,
                 "honest_count": len(current_honest),
                 "deceptive_count": len(current_deceptive),
@@ -608,13 +659,13 @@ def main() -> None:
 
         print(
             f"[fixed-track-search] step={step_number} evaluating {len(candidates)} candidates "
-            f"(current score={score_tuple(current_score)})"
+            f"(current score={score_tuple(current_score, args.objective)})"
         )
         step_started = time.monotonic()
         best_candidate = None
         for idx, candidate in enumerate(candidates, start=1):
             move_type, item, honest_roles, deceptive_roles, question_ids, result, score = candidate
-            if best_candidate is None or score_tuple(score) > score_tuple(best_candidate[6]):
+            if best_candidate is None or score_tuple(score, args.objective) > score_tuple(best_candidate[6], args.objective):
                 best_candidate = candidate
             candidate_rows.append(
                 {
@@ -633,7 +684,7 @@ def main() -> None:
             if idx == 1 or (args.progress_every > 0 and idx % args.progress_every == 0):
                 print(
                     f"[fixed-track-search] step={step_number} candidates={idx}/{len(candidates)} "
-                    f"best={score_tuple(best_candidate[6])}"
+                    f"best={score_tuple(best_candidate[6], args.objective)}"
                 )
 
         write_csv(
@@ -644,7 +695,7 @@ def main() -> None:
 
         assert best_candidate is not None
         best_score = best_candidate[6]
-        if score_tuple(best_score) <= score_tuple(current_score):
+        if score_tuple(best_score, args.objective) <= score_tuple(current_score, args.objective):
             elapsed = time.monotonic() - step_started
             print(
                 f"[fixed-track-search] no improving removal found at step={step_number} "
@@ -674,7 +725,7 @@ def main() -> None:
         elapsed = time.monotonic() - step_started
         print(
             f"[fixed-track-search] step={step_number} chose {move_type}={item} "
-            f"score={score_tuple(current_score)} elapsed={elapsed:.1f}s"
+            f"score={score_tuple(current_score, args.objective)} elapsed={elapsed:.1f}s"
         )
         save_checkpoint()
         step_number += 1
@@ -706,6 +757,8 @@ def main() -> None:
         {
             "method": args.method,
             "layer_spec": resolved_spec.key,
+            "objective": args.objective,
+            "threshold": args.threshold,
             "honest_roles": current_honest,
             "deceptive_roles": current_deceptive,
             "question_ids": current_questions,
@@ -719,6 +772,8 @@ def main() -> None:
         {
             "baseline_score": score_result(baseline_result),
             "final_score": current_score,
+            "objective": args.objective,
+            "threshold": args.threshold,
             "steps_completed": len(history_rows) - 1,
         },
     )
@@ -752,6 +807,8 @@ def main() -> None:
         current_deceptive,
         args.method,
         resolved_spec.key,
+        args.objective,
+        args.threshold,
         selected_manifest_path,
         selected_questions_path,
     )
@@ -774,7 +831,7 @@ def main() -> None:
         final_plot_rows,
     )
     plot_deltas(plots_dir / "delta_vs_baseline.png", final_plot_rows)
-    plot_trajectory(plots_dir / "search_trajectory.png", history_rows)
+    plot_trajectory(plots_dir / "search_trajectory.png", history_rows, args.objective, args.threshold)
 
     write_json(
         progress_path,
@@ -796,13 +853,15 @@ def main() -> None:
             "step": len(history_rows) - 1,
             "method": args.method,
             "layer_spec": resolved_spec.key,
+            "objective": args.objective,
+            "threshold": args.threshold,
             "final_score": current_score,
             "final_selection_path": str(completed_selection_path),
         },
     )
     print(
         f"[fixed-track-search] completed run_id={run_id} "
-        f"steps={len(history_rows) - 1} final_score={score_tuple(current_score)}"
+        f"steps={len(history_rows) - 1} final_score={score_tuple(current_score, args.objective)}"
     )
     print(
         f"[fixed-track-search] final honest={current_honest} deceptive={current_deceptive} "
