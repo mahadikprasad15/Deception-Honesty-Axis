@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -292,6 +293,27 @@ def token_repr(tokenizer, token_id: int) -> str:
     return token.replace("\n", "\\n")
 
 
+def decoded_token_repr(tokenizer, token_id: int) -> str:
+    text = tokenizer.decode([token_id], skip_special_tokens=False)
+    return text.replace("\n", "\\n")
+
+
+def is_clean_token_candidate(raw_token: str, decoded_token: str) -> bool:
+    if not raw_token or not decoded_token:
+        return False
+    stripped = decoded_token.strip()
+    if len(stripped) < 3:
+        return False
+    starts_new_word = raw_token.startswith(("Ġ", "▁")) or decoded_token[:1].isspace()
+    if not starts_new_word:
+        return False
+    if any(char.isdigit() for char in stripped):
+        return False
+    if not re.fullmatch(r"[A-Za-z][A-Za-z'-]*", stripped):
+        return False
+    return True
+
+
 def top_upvoted_tokens(
     vector: torch.Tensor,
     lm_head,
@@ -299,23 +321,33 @@ def top_upvoted_tokens(
     tokenizer,
     top_k: int,
 ) -> list[dict[str, Any]]:
+    candidate_pool = max(top_k * 20, 50)
     with torch.no_grad():
         hidden = vector.to(next(lm_head.parameters()).device).to(next(lm_head.parameters()).dtype)
         if final_norm is not None:
             hidden = final_norm(hidden)
         logits = lm_head(hidden).to(torch.float32).cpu()
-        values, indices = torch.topk(logits, k=top_k)
+        values, indices = torch.topk(logits, k=min(candidate_pool, int(logits.shape[0])))
     rows = []
     for rank, (value, token_id) in enumerate(zip(values.tolist(), indices.tolist()), start=1):
+        raw_token = token_repr(tokenizer, int(token_id))
+        decoded_token = decoded_token_repr(tokenizer, int(token_id))
         rows.append(
             {
                 "rank": rank,
                 "token_id": int(token_id),
-                "token": token_repr(tokenizer, int(token_id)),
+                "raw_token": raw_token,
+                "decoded_token": decoded_token,
                 "logit": float(value),
+                "is_clean_candidate": is_clean_token_candidate(raw_token, decoded_token),
             }
         )
     return rows
+
+
+def top_clean_tokens(token_rows: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
+    clean_rows = [row for row in token_rows if bool(row.get("is_clean_candidate"))]
+    return clean_rows[:top_k]
 
 
 def main() -> None:
@@ -391,6 +423,7 @@ def main() -> None:
             base_vector = role_vector_for_spec(role_vectors[role_name], resolved_spec).detach().cpu().to(torch.float32)
             lens_vector = base_vector if args.mode == "absolute" else base_vector - anchor_vector
             token_rows = top_upvoted_tokens(lens_vector, lm_head, final_norm, tokenizer, args.top_k)
+            clean_rows = top_clean_tokens(token_rows, args.top_k)
 
             row = {
                 "axis_id": axis_id,
@@ -407,14 +440,38 @@ def main() -> None:
                 "vector_norm": float(torch.linalg.norm(lens_vector)),
                 "source_run_dir": str(search_run_dir.resolve()),
             }
-            joined_tokens = []
-            for token_row in token_rows:
-                suffix = str(token_row["rank"])
-                row[f"token_{suffix}"] = token_row["token"]
-                row[f"token_id_{suffix}"] = token_row["token_id"]
-                row[f"logit_{suffix}"] = token_row["logit"]
-                joined_tokens.append(f"{token_row['token']} ({token_row['logit']:.3f})")
-            row["top_tokens"] = ", ".join(joined_tokens)
+            raw_joined_tokens = []
+            clean_joined_tokens = []
+            for rank in range(args.top_k):
+                raw_token_row = token_rows[rank] if rank < len(token_rows) else None
+                clean_token_row = clean_rows[rank] if rank < len(clean_rows) else None
+                suffix = str(rank + 1)
+
+                if raw_token_row is not None:
+                    row[f"raw_token_{suffix}"] = raw_token_row["raw_token"]
+                    row[f"raw_decoded_token_{suffix}"] = raw_token_row["decoded_token"]
+                    row[f"raw_token_id_{suffix}"] = raw_token_row["token_id"]
+                    row[f"raw_logit_{suffix}"] = raw_token_row["logit"]
+                    raw_joined_tokens.append(f"{raw_token_row['decoded_token'].strip()} ({raw_token_row['logit']:.3f})")
+                else:
+                    row[f"raw_token_{suffix}"] = None
+                    row[f"raw_decoded_token_{suffix}"] = None
+                    row[f"raw_token_id_{suffix}"] = None
+                    row[f"raw_logit_{suffix}"] = None
+
+                if clean_token_row is not None:
+                    row[f"token_{suffix}"] = clean_token_row["decoded_token"].strip()
+                    row[f"token_id_{suffix}"] = clean_token_row["token_id"]
+                    row[f"logit_{suffix}"] = clean_token_row["logit"]
+                    clean_joined_tokens.append(f"{clean_token_row['decoded_token'].strip()} ({clean_token_row['logit']:.3f})")
+                else:
+                    row[f"token_{suffix}"] = None
+                    row[f"token_id_{suffix}"] = None
+                    row[f"logit_{suffix}"] = None
+
+            row["top_tokens_clean"] = ", ".join(clean_joined_tokens)
+            row["top_tokens_raw"] = ", ".join(raw_joined_tokens)
+            row["top_tokens"] = row["top_tokens_clean"] or row["top_tokens_raw"]
             axis_rows.append(row)
 
         axis_rows = sorted(axis_rows, key=lambda item: (item["role_side"], item["role_order"], item["role_name"]))
