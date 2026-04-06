@@ -12,6 +12,13 @@ import numpy as np
 from deception_honesty_axis.common import ensure_dir, find_repo_root, load_jsonl, make_run_id, read_json, slugify, utc_now_iso, write_json
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 
+LINEAGE_EDGES = [
+    ("deception-honesty-v1", "deception-honesty-v5"),
+    ("deception-honesty-v5", "synthetic-v1-pruned"),
+    ("deception-honesty-v5", "synthetic-v2-orthogonal"),
+    ("synthetic-v1-pruned", "synthetic-v2-orthogonal"),
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -846,6 +853,296 @@ def build_axis_similarity_tables(final_dataset_rows: list[dict[str, Any]], axis_
     return {"similarity": similarity_rows, "clusters": cluster_rows, "matrix": matrix_rows}
 
 
+def build_lineage_tables(
+    search_runs: list[dict[str, Any]],
+    final_dataset_rows: list[dict[str, Any]],
+    axis_roles: list[dict[str, Any]],
+    axis_questions: list[dict[str, Any]],
+    geometry_rows: list[dict[str, Any]],
+    role_mix_rows: list[dict[str, Any]],
+    search_steps: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    runs_by_key = {
+        (str(row["variant"]), str(row["probe_family"]), str(row["objective_label"])): row
+        for row in search_runs
+    }
+    roles_by_axis: dict[str, list[dict[str, Any]]] = {}
+    for row in axis_roles:
+        roles_by_axis.setdefault(str(row["axis_id"]), []).append(row)
+    questions_by_axis: dict[str, list[dict[str, Any]]] = {}
+    for row in axis_questions:
+        questions_by_axis.setdefault(str(row["axis_id"]), []).append(row)
+    final_dataset_by_axis: dict[str, list[dict[str, Any]]] = {}
+    for row in final_dataset_rows:
+        final_dataset_by_axis.setdefault(str(row["axis_id"]), []).append(row)
+    geometry_by_axis_dataset = {
+        (str(row["axis_id"]), str(row["dataset_label"])): row
+        for row in geometry_rows
+    }
+    dominant_role_by_axis_dataset: dict[tuple[str, str], tuple[str | None, float | None]] = {}
+    for row in role_mix_rows:
+        key = (str(row["axis_id"]), str(row["dataset_label"]))
+        fraction = safe_float(row.get("fraction_of_deceptive"))
+        existing = dominant_role_by_axis_dataset.get(key)
+        if existing is None or (fraction is not None and (existing[1] is None or fraction > existing[1])):
+            dominant_role_by_axis_dataset[key] = (row.get("role"), fraction)
+
+    parent_step_item_stats: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in search_steps:
+        if str(row.get("move_type")) == "start":
+            continue
+        key = (str(row.get("axis_id")), str(row.get("item")))
+        payload = parent_step_item_stats.setdefault(
+            key,
+            {"times_selected": 0, "mean_score_gain_mean_auroc": [], "mean_step": []},
+        )
+        payload["times_selected"] += 1
+        gain = safe_float(row.get("score_gain_mean_auroc"))
+        if gain is not None:
+            payload["mean_score_gain_mean_auroc"].append(gain)
+        step = safe_float(row.get("step"))
+        if step is not None:
+            payload["mean_step"].append(step)
+
+    comparison_rows: list[dict[str, Any]] = []
+    dataset_delta_rows: list[dict[str, Any]] = []
+    item_story_rows: list[dict[str, Any]] = []
+
+    for parent_variant, child_variant in LINEAGE_EDGES:
+        for probe_family in ("contrast", "pc1"):
+            for objective_label in ("mean", "thr"):
+                parent_run = runs_by_key.get((parent_variant, probe_family, objective_label))
+                child_run = runs_by_key.get((child_variant, probe_family, objective_label))
+                if parent_run is None or child_run is None:
+                    continue
+
+                parent_axis_id = str(parent_run["axis_id"])
+                child_axis_id = str(child_run["axis_id"])
+                parent_label = str(parent_run["axis_label"])
+                child_label = str(child_run["axis_label"])
+
+                parent_role_rows = roles_by_axis.get(parent_axis_id, [])
+                child_role_rows = roles_by_axis.get(child_axis_id, [])
+                parent_question_rows = questions_by_axis.get(parent_axis_id, [])
+                child_question_rows = questions_by_axis.get(child_axis_id, [])
+
+                parent_roles = {str(row["role_name"]) for row in parent_role_rows if str(row.get("role_side")) != "anchor"}
+                child_roles = {str(row["role_name"]) for row in child_role_rows if str(row.get("role_side")) != "anchor"}
+                retained_roles = sorted(parent_roles & child_roles)
+                dropped_roles = sorted(parent_roles - child_roles)
+                added_roles = sorted(child_roles - parent_roles)
+
+                parent_questions = {str(row["question_id"]) for row in parent_question_rows}
+                child_questions = {str(row["question_id"]) for row in child_question_rows}
+                retained_questions = sorted(parent_questions & child_questions)
+                dropped_questions = sorted(parent_questions - child_questions)
+                added_questions = sorted(child_questions - parent_questions)
+
+                parent_dataset_lookup = {
+                    str(row["dataset_label"]): row
+                    for row in final_dataset_by_axis.get(parent_axis_id, [])
+                }
+                child_dataset_lookup = {
+                    str(row["dataset_label"]): row
+                    for row in final_dataset_by_axis.get(child_axis_id, [])
+                }
+                shared_datasets = sorted(set(parent_dataset_lookup) & set(child_dataset_lookup))
+
+                dataset_deltas: list[float] = []
+                improved_count = 0
+                worsened_count = 0
+                same_count = 0
+                for dataset_label in shared_datasets:
+                    parent_row = parent_dataset_lookup[dataset_label]
+                    child_row = child_dataset_lookup[dataset_label]
+                    parent_auroc = safe_float(parent_row.get("auroc"))
+                    child_auroc = safe_float(child_row.get("auroc"))
+                    delta = None if parent_auroc is None or child_auroc is None else child_auroc - parent_auroc
+                    if delta is not None:
+                        dataset_deltas.append(delta)
+                        if delta > 1e-6:
+                            improved_count += 1
+                        elif delta < -1e-6:
+                            worsened_count += 1
+                        else:
+                            same_count += 1
+
+                    parent_geom = geometry_by_axis_dataset.get((parent_axis_id, dataset_label), {})
+                    child_geom = geometry_by_axis_dataset.get((child_axis_id, dataset_label), {})
+                    parent_dom_role, parent_dom_frac = dominant_role_by_axis_dataset.get((parent_axis_id, dataset_label), (None, None))
+                    child_dom_role, child_dom_frac = dominant_role_by_axis_dataset.get((child_axis_id, dataset_label), (None, None))
+                    dataset_delta_rows.append(
+                        {
+                            "parent_axis_id": parent_axis_id,
+                            "parent_axis_label": parent_label,
+                            "child_axis_id": child_axis_id,
+                            "child_axis_label": child_label,
+                            "probe_family": probe_family,
+                            "objective_label": objective_label,
+                            "dataset_label": dataset_label,
+                            "parent_auroc": parent_auroc,
+                            "child_auroc": child_auroc,
+                            "delta_auroc": delta,
+                            "parent_delta_vs_baseline": safe_float(parent_row.get("delta")),
+                            "child_delta_vs_baseline": safe_float(child_row.get("delta")),
+                            "parent_separation_ratio": safe_float(parent_geom.get("separation_ratio")),
+                            "child_separation_ratio": safe_float(child_geom.get("separation_ratio")),
+                            "parent_dominant_role": parent_dom_role,
+                            "child_dominant_role": child_dom_role,
+                            "parent_dominant_role_fraction": parent_dom_frac,
+                            "child_dominant_role_fraction": child_dom_frac,
+                        }
+                    )
+
+                comparison_rows.append(
+                    {
+                        "parent_variant": parent_variant,
+                        "child_variant": child_variant,
+                        "probe_family": probe_family,
+                        "objective_label": objective_label,
+                        "parent_axis_id": parent_axis_id,
+                        "parent_axis_label": parent_label,
+                        "child_axis_id": child_axis_id,
+                        "child_axis_label": child_label,
+                        "parent_question_count": len(parent_questions),
+                        "child_question_count": len(child_questions),
+                        "retained_question_count": len(retained_questions),
+                        "dropped_question_count": len(dropped_questions),
+                        "added_question_count": len(added_questions),
+                        "question_jaccard": jaccard(parent_questions, child_questions),
+                        "parent_role_count": len(parent_roles),
+                        "child_role_count": len(child_roles),
+                        "retained_role_count": len(retained_roles),
+                        "dropped_role_count": len(dropped_roles),
+                        "added_role_count": len(added_roles),
+                        "role_jaccard": jaccard(parent_roles, child_roles),
+                        "mean_parent_auroc": safe_float(parent_run.get("final_mean_auroc")),
+                        "mean_child_auroc": safe_float(child_run.get("final_mean_auroc")),
+                        "mean_auroc_delta": (
+                            safe_float(child_run.get("final_mean_auroc")) - safe_float(parent_run.get("final_mean_auroc"))
+                            if safe_float(child_run.get("final_mean_auroc")) is not None and safe_float(parent_run.get("final_mean_auroc")) is not None
+                            else None
+                        ),
+                        "mean_parent_delta": safe_float(parent_run.get("final_mean_delta")),
+                        "mean_child_delta": safe_float(child_run.get("final_mean_delta")),
+                        "mean_delta_gain": (
+                            safe_float(child_run.get("final_mean_delta")) - safe_float(parent_run.get("final_mean_delta"))
+                            if safe_float(child_run.get("final_mean_delta")) is not None and safe_float(parent_run.get("final_mean_delta")) is not None
+                            else None
+                        ),
+                        "shared_dataset_count": len(shared_datasets),
+                        "improved_dataset_count": improved_count,
+                        "worsened_dataset_count": worsened_count,
+                        "unchanged_dataset_count": same_count,
+                        "mean_dataset_delta": float(np.mean(dataset_deltas)) if dataset_deltas else None,
+                        "best_dataset_delta": float(np.max(dataset_deltas)) if dataset_deltas else None,
+                        "worst_dataset_delta": float(np.min(dataset_deltas)) if dataset_deltas else None,
+                        "retained_roles": ",".join(retained_roles),
+                        "dropped_roles": ",".join(dropped_roles),
+                        "added_roles": ",".join(added_roles),
+                        "retained_questions": ",".join(retained_questions),
+                        "dropped_questions": ",".join(dropped_questions),
+                        "added_questions": ",".join(added_questions),
+                    }
+                )
+
+                for role_name in dropped_roles:
+                    step_stats = parent_step_item_stats.get((parent_axis_id, role_name), {})
+                    item_story_rows.append(
+                        {
+                            "parent_axis_id": parent_axis_id,
+                            "parent_axis_label": parent_label,
+                            "child_axis_id": child_axis_id,
+                            "child_axis_label": child_label,
+                            "probe_family": probe_family,
+                            "objective_label": objective_label,
+                            "item_type": "role",
+                            "item": role_name,
+                            "change_type": "dropped",
+                            "parent_selected_for_removal_count": step_stats.get("times_selected", 0),
+                            "parent_mean_score_gain_mean_auroc": (
+                                float(np.mean(step_stats["mean_score_gain_mean_auroc"]))
+                                if step_stats.get("mean_score_gain_mean_auroc")
+                                else None
+                            ),
+                            "parent_mean_selected_step": (
+                                float(np.mean(step_stats["mean_step"]))
+                                if step_stats.get("mean_step")
+                                else None
+                            ),
+                        }
+                    )
+                for role_name in added_roles:
+                    item_story_rows.append(
+                        {
+                            "parent_axis_id": parent_axis_id,
+                            "parent_axis_label": parent_label,
+                            "child_axis_id": child_axis_id,
+                            "child_axis_label": child_label,
+                            "probe_family": probe_family,
+                            "objective_label": objective_label,
+                            "item_type": "role",
+                            "item": role_name,
+                            "change_type": "added",
+                            "parent_selected_for_removal_count": 0,
+                            "parent_mean_score_gain_mean_auroc": None,
+                            "parent_mean_selected_step": None,
+                        }
+                    )
+                for question_id in dropped_questions:
+                    step_stats = parent_step_item_stats.get((parent_axis_id, question_id), {})
+                    item_story_rows.append(
+                        {
+                            "parent_axis_id": parent_axis_id,
+                            "parent_axis_label": parent_label,
+                            "child_axis_id": child_axis_id,
+                            "child_axis_label": child_label,
+                            "probe_family": probe_family,
+                            "objective_label": objective_label,
+                            "item_type": "question",
+                            "item": question_id,
+                            "change_type": "dropped",
+                            "parent_selected_for_removal_count": step_stats.get("times_selected", 0),
+                            "parent_mean_score_gain_mean_auroc": (
+                                float(np.mean(step_stats["mean_score_gain_mean_auroc"]))
+                                if step_stats.get("mean_score_gain_mean_auroc")
+                                else None
+                            ),
+                            "parent_mean_selected_step": (
+                                float(np.mean(step_stats["mean_step"]))
+                                if step_stats.get("mean_step")
+                                else None
+                            ),
+                        }
+                    )
+                for question_id in added_questions:
+                    item_story_rows.append(
+                        {
+                            "parent_axis_id": parent_axis_id,
+                            "parent_axis_label": parent_label,
+                            "child_axis_id": child_axis_id,
+                            "child_axis_label": child_label,
+                            "probe_family": probe_family,
+                            "objective_label": objective_label,
+                            "item_type": "question",
+                            "item": question_id,
+                            "change_type": "added",
+                            "parent_selected_for_removal_count": 0,
+                            "parent_mean_score_gain_mean_auroc": None,
+                            "parent_mean_selected_step": None,
+                        }
+                    )
+
+    comparison_rows.sort(key=lambda row: (row["probe_family"], row["objective_label"], row["parent_variant"], row["child_variant"]))
+    dataset_delta_rows.sort(key=lambda row: (row["probe_family"], row["objective_label"], row["parent_variant"], row["child_variant"], row["dataset_label"]))
+    item_story_rows.sort(key=lambda row: (row["probe_family"], row["objective_label"], row["parent_axis_label"], row["item_type"], row["change_type"], row["item"]))
+    return {
+        "comparisons": comparison_rows,
+        "dataset_deltas": dataset_delta_rows,
+        "item_story": item_story_rows,
+    }
+
+
 def aggregate_run_payloads(per_run_payloads: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     data = {
         "search_runs": [],
@@ -941,6 +1238,15 @@ def main() -> None:
         aggregated["final_axis_questions"],
         args.cluster_count,
     )
+    lineage_tables = build_lineage_tables(
+        aggregated["search_runs"],
+        aggregated["final_dataset_performance"],
+        aggregated["final_axis_roles"],
+        aggregated["final_axis_questions"],
+        aggregated["geometry_per_dataset"],
+        aggregated["role_mix_per_dataset"],
+        aggregated["search_steps"],
+    )
 
     outputs = {
         "search_runs.csv": aggregated["search_runs"],
@@ -962,6 +1268,9 @@ def main() -> None:
         "axis_similarity.csv": axis_tables["similarity"],
         "axis_clusters.csv": axis_tables["clusters"],
         "axis_dataset_matrix.csv": axis_tables["matrix"],
+        "axis_lineage_comparison.csv": lineage_tables["comparisons"],
+        "axis_lineage_dataset_delta.csv": lineage_tables["dataset_deltas"],
+        "axis_lineage_item_story.csv": lineage_tables["item_story"],
     }
 
     for filename, rows in outputs.items():
