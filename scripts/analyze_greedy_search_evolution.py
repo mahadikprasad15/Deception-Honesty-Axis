@@ -973,6 +973,8 @@ def build_lineage_tables(
                     child_dom_role, child_dom_frac = dominant_role_by_axis_dataset.get((child_axis_id, dataset_label), (None, None))
                     dataset_delta_rows.append(
                         {
+                            "parent_variant": parent_variant,
+                            "child_variant": child_variant,
                             "parent_axis_id": parent_axis_id,
                             "parent_axis_label": parent_label,
                             "child_axis_id": child_axis_id,
