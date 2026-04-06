@@ -423,7 +423,16 @@ def main() -> None:
         completed_axis_ids.add(axis_id)
         save_progress(progress_path, {"completed_axis_ids": sorted(completed_axis_ids)})
 
-    result_rows = sorted(result_rows, key=lambda row: (row["variant"], row["method"], row["objective"], row["role_order"], row["role_name"]))
+    result_rows = sorted(
+        result_rows,
+        key=lambda row: (
+            str(row.get("variant") or ""),
+            str(row.get("method") or ""),
+            str(row.get("objective") or ""),
+            int(row.get("role_order") or 0),
+            str(row.get("role_name") or ""),
+        ),
+    )
     if result_rows:
         write_csv(run_root / "results" / "role_logit_lens.csv", list(result_rows[0].keys()), result_rows)
         markdown_lines = [
