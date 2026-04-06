@@ -51,8 +51,15 @@ def parse_args() -> argparse.Namespace:
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
     ensure_dir(path.parent)
+    ordered_fieldnames = list(fieldnames)
+    seen = set(ordered_fieldnames)
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                ordered_fieldnames.append(key)
+                seen.add(key)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=ordered_fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
