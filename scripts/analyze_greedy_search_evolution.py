@@ -643,10 +643,14 @@ def build_drop_summaries(step_rows: list[dict[str, Any]], final_dataset_rows: li
         payload["times_selected"] += 1
         if safe_float(row.get("step")) is not None:
             payload["mean_step"].append(float(row["step"]))
-        for field in ("score_gain_mean_auroc", "score_gain_mean_delta", "score_gain_sum_delta"):
-            value = safe_float(row.get(field))
+        for source_field, target_field in (
+            ("score_gain_mean_auroc", "mean_score_gain_mean_auroc"),
+            ("score_gain_mean_delta", "mean_score_gain_mean_delta"),
+            ("score_gain_sum_delta", "mean_score_gain_sum_delta"),
+        ):
+            value = safe_float(row.get(source_field))
             if value is not None:
-                payload[field].append(value)
+                payload[target_field].append(value)
         payload["variants"].add(str(row.get("variant")))
         payload["axes"].add(str(row.get("axis_id")))
 
