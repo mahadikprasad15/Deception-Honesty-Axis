@@ -158,7 +158,10 @@ def main() -> None:
             {
                 "item_id": rollout_record["item_id"],
                 "role": role,
+                "role_source": rollout_record.get("role_source"),
+                "role_metadata": rollout_record.get("role_metadata", {}),
                 "question_id": rollout_record["question_id"],
+                "question_metadata": rollout_record.get("question_metadata", {}),
                 "prompt_id": rollout_record["prompt_id"],
                 "pooled_activations": pooled,
                 "response_token_count": int(response_slice.shape[1]),
@@ -168,6 +171,7 @@ def main() -> None:
             {
                 "item_id": rollout_record["item_id"],
                 "role": role,
+                "role_source": rollout_record.get("role_source"),
                 "question_id": rollout_record["question_id"],
                 "prompt_id": rollout_record["prompt_id"],
             }

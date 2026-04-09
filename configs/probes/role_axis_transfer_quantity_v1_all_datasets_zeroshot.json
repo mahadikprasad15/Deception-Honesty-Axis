@@ -1,0 +1,37 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts"
+  },
+  "role_axis": {
+    "experiment_config": "configs/experiments/quantity_axis_v1_llama32_3b.json",
+    "anchor_role": "default",
+    "honest_roles": ["ombudsman", "transparency_officer", "disclosure_counsel", "whistleblower", "documentarian"],
+    "deceptive_roles": ["handler", "broker", "impression_manager", "coverup_operator", "gatekeeper"],
+    "layer_specs": ["14"]
+  },
+  "target": {
+    "activations_root": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Llama-3.2-3B-Instruct",
+    "datasets": [
+      "Deception-AILiar-completion",
+      "Deception-ConvincingGame-completion",
+      "Deception-HarmPressureChoice-completion",
+      "Deception-InstructedDeception-completion",
+      "Deception-Mask-completion",
+      "Deception-Roleplaying-completion",
+      "Deception-ClaimsDefinitional-completion",
+      "Deception-ClaimsEvidential-completion",
+      "Deception-ClaimsFictional-completion"
+    ],
+    "source_split": "train",
+    "eval_split": "test",
+    "pooling": "completion_mean"
+  },
+  "evaluation": {
+    "methods": ["contrast_zero_shot", "pc1_zero_shot"],
+    "logistic_max_iter": 1000,
+    "random_seed": 42
+  }
+}

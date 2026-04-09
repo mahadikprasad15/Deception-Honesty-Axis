@@ -13,6 +13,7 @@ class RoleDefinition:
     name: str
     source: str
     anchor_only: bool
+    metadata: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -27,11 +28,13 @@ class WorkUnit:
     item_id: str
     role_name: str
     role_source: str
+    role_metadata: dict[str, Any]
     prompt_id: int
     prompt_text: str
     question_id: str
     question_offset: int
     question_text: str
+    question_metadata: dict[str, Any]
     anchor_only: bool
 
 
@@ -47,6 +50,11 @@ def role_definitions(config: ExperimentConfig) -> list[RoleDefinition]:
             name=str(role["name"]),
             source=str(role.get("source") or Path(role["instruction_file"]).name),
             anchor_only=bool(role.get("anchor_only", False)),
+            metadata={
+                key: value
+                for key, value in dict(role).items()
+                if key not in {"name", "source", "instruction_file", "anchor_only"}
+            },
         )
         for role in manifest["roles"]
     ]
@@ -156,11 +164,13 @@ def expand_work_units(config: ExperimentConfig) -> list[WorkUnit]:
                         item_id=f"{role.name}__p{prompt_id:02d}__q{question_offset:03d}",
                         role_name=role.name,
                         role_source=role.source,
+                        role_metadata=dict(role.metadata),
                         prompt_id=prompt_id,
                         prompt_text=prompt_text,
                         question_id=question.question_id,
                         question_offset=question_offset,
                         question_text=question.question,
+                        question_metadata=dict(question.metadata),
                         anchor_only=role.anchor_only,
                     )
                 )
@@ -173,12 +183,15 @@ def build_work_units(repo_root: Path, config: dict[str, Any] | ExperimentConfig)
         {
             "item_id": unit.item_id,
             "role": unit.role_name,
+            "role_source": unit.role_source,
+            "role_metadata": dict(unit.role_metadata),
             "anchor_only": unit.anchor_only,
             "prompt_id": unit.prompt_id,
             "system_prompt": unit.prompt_text,
             "question_id": unit.question_id,
             "question_offset": unit.question_offset,
             "question_text": unit.question_text,
+            "question_metadata": dict(unit.question_metadata),
         }
         for unit in expand_work_units(experiment_config)
     ]
