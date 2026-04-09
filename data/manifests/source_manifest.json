@@ -1,0 +1,85 @@
+{
+  "config_path": "/Users/prasadmahadik/Deception-Honesty-Axis/configs/experiments/deception_honesty_v1_llama32_3b.json",
+  "fetched_at": "2026-03-31T07:31:08Z",
+  "files": [
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/questions/extraction_questions.jsonl",
+      "sha256": "31650b9a55d6b827d29ec2ee89034c7efd454672779b3ad9d7c8c4e9ea14f69e",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/extraction_questions.jsonl"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/default.json",
+      "sha256": "1be698377c3b2505e60cf268c606820c2a0334ae90a9e257b1040d36d5ef6fd3",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/default.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/spy.json",
+      "sha256": "2577d3e3f88e0afaa6e2823d1722d64d5cd5304c79efbf22d58ab0276fb9e6e7",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/spy.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/rogue.json",
+      "sha256": "4fb6214f39f27727f134df8f7fa12f350438d08ebdf9006b08240c2fad6cfba5",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/rogue.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/fixer.json",
+      "sha256": "7ee038a899dd425ac25777ee1a974504e422f3fbaf4178bd883736122b8651c1",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/fixer.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/chameleon.json",
+      "sha256": "19f0745025196d6b3771462782e25cd987b47ec7b2125d076652628f4107e68c",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/chameleon.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/narcissist.json",
+      "sha256": "4b8bf0dd46c421f2859f9457ec75245de9a8fc757c464c2d91711e569dad1ee3",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/narcissist.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/criminal.json",
+      "sha256": "ed8153b12938cb6af48627cf6b10b18927b10cfa7aa464fd92d9f807e5e88f2a",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/criminal.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/judge.json",
+      "sha256": "22926c9b5c7d3a06dd4c3ff7dbbbd6a9df4ce1231e4494226dab6126bec859ec",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/judge.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/validator.json",
+      "sha256": "85be111eb789ccda55ba99faafa3a3318a8e04d72c39c9faa9a7e768fc47b8b1",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/validator.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/auditor.json",
+      "sha256": "01900e16e2199bc662902f1b4b28a01d68d447ecfd9526e2cab69d99d69cd75a",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/auditor.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/journalist.json",
+      "sha256": "11c754c0a87c3279744a735f81ec35026bba6cd1032163f9521d675e6edaebc0",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/journalist.json"
+    },
+    {
+      "path": "/Users/prasadmahadik/Deception-Honesty-Axis/data/roles/instructions/examiner.json",
+      "sha256": "9da7f982a5b6b657acf65bce56fe37177ff87b11be9d16c614d55a50ddce55f9",
+      "status": "downloaded",
+      "url": "https://raw.githubusercontent.com/safety-research/assistant-axis/master/data/roles/instructions/examiner.json"
+    }
+  ],
+  "upstream_repo": "https://github.com/safety-research/assistant-axis"
+}
