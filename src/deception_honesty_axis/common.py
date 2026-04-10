@@ -77,6 +77,17 @@ def append_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> int:
     return count
 
 
+def write_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> int:
+    ensure_dir(path.parent)
+    count = 0
+    with path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=True))
+            handle.write("\n")
+            count += 1
+    return count
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
