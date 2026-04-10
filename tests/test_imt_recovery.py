@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from deception_honesty_axis.imt_config import imt_run_root, load_imt_config
 from deception_honesty_axis.imt_plotting import save_axis_variant_heatmap, save_four_axis_grouped_bars
 from deception_honesty_axis.imt_recovery import (
     IMT_AXIS_ORDER,
     aggregate_template_scores,
+    build_reusable_template_rows,
     fit_imt_axes,
     parse_imt_score_output,
 )
@@ -111,7 +114,12 @@ class IMTRecoveryTest(unittest.TestCase):
                         },
                         "scoring": {
                             "model": {"id": "meta-llama/Llama-3.2-3B-Instruct"},
-                            "templates": ["rubric_first", "responsiveness_emphasis", "listener_misled_mechanism"]
+                            "templates": ["rubric_first", "responsiveness_emphasis", "listener_misled_mechanism"],
+                            "reuse_from": {
+                                "imt_config": "configs/imt/imt.json",
+                                "run_id": "${IMT_REUSE_RUN_ID}",
+                                "bank_axes": ["quality", "relation", "manner"],
+                            },
                         },
                         "fit": {"granularity": "instance", "layer": 14, "pca_components": 8, "ridge_alpha": 1.0},
                         "target": {
@@ -125,10 +133,127 @@ class IMTRecoveryTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            config = load_imt_config(config_path)
-            run_root = imt_run_root(config, "run-1")
-            self.assertEqual(config.bank_slug, "four-axis-v1")
-            self.assertTrue(run_root.exists())
+            prior_env = os.environ.get("IMT_REUSE_RUN_ID")
+            os.environ["IMT_REUSE_RUN_ID"] = "reuse-run-1"
+            try:
+                config = load_imt_config(config_path)
+                run_root = imt_run_root(config, "run-1")
+                self.assertEqual(config.bank_slug, "four-axis-v1")
+                self.assertTrue(run_root.exists())
+                self.assertIsNotNone(config.score_reuse)
+                self.assertEqual(config.score_reuse.run_id, "reuse-run-1")
+                self.assertEqual(config.score_reuse.bank_axes, ("quality", "relation", "manner"))
+            finally:
+                if prior_env is None:
+                    os.environ.pop("IMT_REUSE_RUN_ID", None)
+                else:
+                    os.environ["IMT_REUSE_RUN_ID"] = prior_env
+
+    def test_build_reusable_template_rows_reuses_only_allowed_axes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prior_bank_path = root / "bank_records.pt"
+            prior_scores_path = root / "per_template_scores.jsonl"
+            prior_config_path = root / "prior.json"
+            prior_config_path.write_text("{}", encoding="utf-8")
+
+            prior_bank_records = [
+                {
+                    "bank_axis": "quality",
+                    "item_id": "fabricator__p00__q000",
+                    "role": "fabricator",
+                    "prompt_id": 0,
+                    "question_id": "q000",
+                    "role_instruction_short": "fabricate",
+                    "response_text": "The sky is green.",
+                },
+                {
+                    "bank_axis": "quantity",
+                    "item_id": "spin_doctor__p00__q000",
+                    "role": "spin_doctor",
+                    "prompt_id": 0,
+                    "question_id": "q000",
+                    "role_instruction_short": "spin",
+                    "response_text": "I withheld the key detail.",
+                },
+            ]
+            torch.save(prior_bank_records, prior_bank_path)
+            prior_scores_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "item_id": "fabricator__p00__q000",
+                                "bank_axis": "quality",
+                                "role": "fabricator",
+                                "prompt_id": 0,
+                                "question_id": "q000",
+                                "template_name": "rubric_first",
+                                "parsed_ok": True,
+                                "q1": 2.0,
+                                "q2": 0.0,
+                                "q3": 0.0,
+                                "q4": 0.0,
+                                "confidence": 0.9,
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "item_id": "spin_doctor__p00__q000",
+                                "bank_axis": "quantity",
+                                "role": "spin_doctor",
+                                "prompt_id": 0,
+                                "question_id": "q000",
+                                "template_name": "rubric_first",
+                                "parsed_ok": True,
+                                "q1": 0.0,
+                                "q2": 2.0,
+                                "q3": 0.0,
+                                "q4": 1.0,
+                                "confidence": 0.8,
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            current_records = [
+                {
+                    "bank_axis": "quality",
+                    "item_id": "fabricator__p00__q000",
+                    "role": "fabricator",
+                    "prompt_id": 0,
+                    "question_id": "q000",
+                    "role_instruction_short": "fabricate",
+                    "response_text": "The sky is green.",
+                },
+                {
+                    "bank_axis": "quantity",
+                    "item_id": "spin_doctor__p00__q000",
+                    "role": "spin_doctor",
+                    "prompt_id": 0,
+                    "question_id": "q000",
+                    "role_instruction_short": "new spin",
+                    "response_text": "This is a new quantity response.",
+                },
+            ]
+
+            reused_rows = build_reusable_template_rows(
+                current_records,
+                prior_bank_records_path=prior_bank_path,
+                prior_per_template_scores_path=prior_scores_path,
+                template_names=["rubric_first"],
+                bank_axes=["quality", "relation", "manner"],
+                existing_completed_keys=set(),
+                reused_from_run_id="prior-run",
+                reused_from_config_path=prior_config_path,
+            )
+
+            self.assertEqual(len(reused_rows), 1)
+            self.assertEqual(reused_rows[0]["bank_axis"], "quality")
+            self.assertEqual(reused_rows[0]["reused_from_run_id"], "prior-run")
 
     def test_plot_helpers_write_expected_files(self) -> None:
         rows = []

@@ -244,6 +244,16 @@ def _serializable_bank_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def score_row_identity(row: dict[str, Any]) -> tuple[str, str, str, int, str]:
+    return (
+        str(row.get("bank_axis", "")),
+        str(row.get("item_id", "")),
+        str(row.get("role", "")),
+        int(row.get("prompt_id", -1)),
+        str(row.get("question_id", "")),
+    )
+
+
 def _load_source_records(source_spec, *, role_instruction_max_chars: int) -> list[dict[str, Any]]:  # noqa: ANN001
     experiment_config = source_spec.experiment_config
     corpus_path = resolve_corpus_root(experiment_config)
@@ -355,7 +365,7 @@ def write_bank_artifacts(run_root: Path, records: list[dict[str, Any]], summary:
 def load_bank_records(path: Path) -> list[dict[str, Any]]:
     import torch
 
-    return list(torch.load(path, map_location="cpu"))
+    return list(torch.load(path, map_location="cpu", weights_only=False))
 
 
 def _extract_json_candidate(text: str) -> str | None:
@@ -777,10 +787,60 @@ def write_fit_outputs(
     }
 
 
+def build_reusable_template_rows(
+    current_records: list[dict[str, Any]],
+    *,
+    prior_bank_records_path: Path,
+    prior_per_template_scores_path: Path,
+    template_names: list[str],
+    bank_axes: list[str] | tuple[str, ...] | None,
+    existing_completed_keys: set[tuple[str, str]],
+    reused_from_run_id: str,
+    reused_from_config_path: Path,
+) -> list[dict[str, Any]]:
+    if not prior_bank_records_path.exists():
+        raise FileNotFoundError(f"Missing prior bank records for score reuse: {prior_bank_records_path}")
+    if not prior_per_template_scores_path.exists():
+        raise FileNotFoundError(f"Missing prior per-template score rows for score reuse: {prior_per_template_scores_path}")
+
+    allowed_axes = {str(item) for item in bank_axes or []}
+    current_lookup = {
+        score_row_identity(record): record
+        for record in current_records
+        if not allowed_axes or str(record.get("bank_axis", "")) in allowed_axes
+    }
+    reusable_rows: list[dict[str, Any]] = []
+    claimed_keys = set(existing_completed_keys)
+    template_name_set = set(template_names)
+
+    for row in load_jsonl(prior_per_template_scores_path):
+        if not bool(row.get("parsed_ok", False)):
+            continue
+        template_name = str(row.get("template_name", ""))
+        if template_name not in template_name_set:
+            continue
+        identity = score_row_identity(row)
+        if allowed_axes and identity[0] not in allowed_axes:
+            continue
+        current_record = current_lookup.get(identity)
+        if current_record is None:
+            continue
+        task_key = (str(current_record["item_id"]), template_name)
+        if task_key in claimed_keys:
+            continue
+        reused_row = dict(row)
+        reused_row["reused_from_run_id"] = reused_from_run_id
+        reused_row["reused_from_config_path"] = str(reused_from_config_path)
+        reused_row["reused_at"] = utc_now_iso()
+        reusable_rows.append(reused_row)
+        claimed_keys.add(task_key)
+    return reusable_rows
+
+
 def load_fit_artifacts(path: Path) -> dict[str, Any]:
     import torch
 
-    return torch.load(path, map_location="cpu")
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def write_imt_axis_bundle(run_root: Path, fit_artifacts: dict[str, Any], *, bank_name: str) -> dict[str, str]:
@@ -857,7 +917,7 @@ def write_imt_axis_bundle(run_root: Path, fit_artifacts: dict[str, Any], *, bank
 def load_imt_axis_bundle(path: Path) -> dict[str, Any]:
     import torch
 
-    return torch.load(path, map_location="cpu")
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def read_completed_imt_metric_keys(path: Path) -> set[tuple[str, str, str]]:

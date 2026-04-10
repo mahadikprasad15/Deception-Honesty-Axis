@@ -31,6 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-stage", nargs="*", default=[], help="Stage names to run even if outputs exist.")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size for scoring prompts.")
     parser.add_argument("--progress-every", type=int, default=20, help="Progress cadence for scoring and transfer stages.")
+    parser.add_argument("--reuse-score-config", type=Path, default=None, help="Optional prior IMT config to reuse parsed prompt scores from.")
+    parser.add_argument("--reuse-score-run-id", type=str, default=None, help="Optional prior IMT run id to reuse parsed prompt scores from.")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing them.")
     return parser.parse_args()
 
@@ -200,6 +202,15 @@ def main() -> None:
         status_name = str(spec["status_name"])
         expected_artifact = spec["artifact"]
         command = [str(item) for item in spec["command"]]
+        if stage_name == "imt_scores" and args.reuse_score_config is not None and args.reuse_score_run_id is not None:
+            command.extend(
+                [
+                    "--reuse-score-config",
+                    str(args.reuse_score_config.resolve()),
+                    "--reuse-score-run-id",
+                    str(args.reuse_score_run_id),
+                ]
+            )
         forced = stage_name in set(args.force_stage)
         completed = _is_stage_complete(run_root, status_name, expected_artifact)
         action = "run"

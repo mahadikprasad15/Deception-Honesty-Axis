@@ -47,6 +47,15 @@
       "responsiveness_emphasis",
       "listener_misled_mechanism"
     ],
+    "reuse_from": {
+      "imt_config": "configs/imt/four_axis_v1_instance_llama32_3b.json",
+      "run_id": "${IMT_V1_RUN_ID}",
+      "bank_axes": [
+        "quality",
+        "relation",
+        "manner"
+      ]
+    },
     "role_instruction_max_chars": 320
   },
   "fit": {

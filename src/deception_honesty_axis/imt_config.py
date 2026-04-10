@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,13 @@ class IMTSourceSpec:
     @property
     def experiment_config(self):  # noqa: ANN201
         return load_config(self.experiment_config_path)
+
+
+@dataclass(frozen=True)
+class IMTScoreReuseSpec:
+    imt_config_path: Path
+    run_id: str
+    bank_axes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -88,6 +96,28 @@ class IMTRecoveryConfig:
     @property
     def role_instruction_max_chars(self) -> int:
         return int(self.raw["scoring"].get("role_instruction_max_chars", 320))
+
+    @property
+    def score_reuse(self) -> IMTScoreReuseSpec | None:
+        entry = self.raw.get("scoring", {}).get("reuse_from")
+        if not entry:
+            return None
+        path = Path(entry["imt_config"])
+        resolved = path if path.is_absolute() else (self.repo_root / path).resolve()
+        run_id = os.path.expandvars(str(entry["run_id"])).strip()
+        if not run_id:
+            raise ValueError("scoring.reuse_from.run_id resolved to an empty value")
+        if "$" in run_id:
+            raise ValueError(
+                "scoring.reuse_from.run_id still contains an unresolved environment variable; "
+                "export the referenced run id before loading this config"
+            )
+        bank_axes = tuple(str(item) for item in entry.get("bank_axes", []))
+        return IMTScoreReuseSpec(
+            imt_config_path=resolved,
+            run_id=run_id,
+            bank_axes=bank_axes,
+        )
 
     @property
     def fit_granularity(self) -> str:

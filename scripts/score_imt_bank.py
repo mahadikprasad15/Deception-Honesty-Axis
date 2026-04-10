@@ -10,6 +10,7 @@ from deception_honesty_axis.imt_config import imt_run_root, load_imt_config
 from deception_honesty_axis.imt_recovery import (
     TEMPLATE_LABELS,
     aggregate_template_scores,
+    build_reusable_template_rows,
     build_judge_messages,
     load_bank_records,
     load_completed_template_keys,
@@ -25,6 +26,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default=None, help="Optional fixed run id.")
     parser.add_argument("--batch-size", type=int, default=4, help="Number of judge prompts per generation batch.")
     parser.add_argument("--progress-every", type=int, default=20, help="Print progress every N completed prompts.")
+    parser.add_argument(
+        "--reuse-score-config",
+        type=Path,
+        default=None,
+        help="Optional prior IMT config whose parsed per-template scores should be reused.",
+    )
+    parser.add_argument(
+        "--reuse-score-run-id",
+        type=str,
+        default=None,
+        help="Optional prior IMT run id whose parsed per-template scores should be reused.",
+    )
     return parser.parse_args()
 
 
@@ -45,6 +58,43 @@ def main() -> None:
 
     bank_records = load_bank_records(bank_records_path)
     completed_keys = load_completed_template_keys(per_template_path)
+    reuse_spec = config.score_reuse
+    reuse_config_path = None
+    reuse_run_id = None
+    reuse_bank_axes: list[str] = []
+    if args.reuse_score_config and args.reuse_score_run_id:
+        reuse_config_path = args.reuse_score_config.resolve()
+        reuse_run_id = str(args.reuse_score_run_id)
+    elif reuse_spec is not None:
+        reuse_config_path = reuse_spec.imt_config_path
+        reuse_run_id = reuse_spec.run_id
+        reuse_bank_axes = list(reuse_spec.bank_axes)
+
+    reused_prompt_scores = 0
+    if reuse_config_path is not None and reuse_run_id is not None:
+        from deception_honesty_axis.imt_config import imt_run_root as resolve_reuse_run_root, load_imt_config as load_reuse_config
+
+        prior_config = load_reuse_config(reuse_config_path)
+        prior_run_root = resolve_reuse_run_root(prior_config, reuse_run_id)
+        reusable_rows = build_reusable_template_rows(
+            bank_records,
+            prior_bank_records_path=prior_run_root / "results" / "bank_records.pt",
+            prior_per_template_scores_path=prior_run_root / "results" / "scoring" / "per_template_scores.jsonl",
+            template_names=config.score_templates,
+            bank_axes=reuse_bank_axes,
+            existing_completed_keys=completed_keys,
+            reused_from_run_id=reuse_run_id,
+            reused_from_config_path=reuse_config_path,
+        )
+        if reusable_rows:
+            append_jsonl(per_template_path, reusable_rows)
+            reused_prompt_scores = len(reusable_rows)
+            completed_keys = load_completed_template_keys(per_template_path)
+            print(
+                f"[imt-scores] reused {reused_prompt_scores} parsed prompt scores "
+                f"from {reuse_run_id}"
+            )
+
     tasks = [
         (record, template_name)
         for record in bank_records
@@ -61,6 +111,7 @@ def main() -> None:
             "templates": config.score_templates,
             "completed_prompt_scores": len(completed_keys),
             "pending_prompt_scores": len(tasks),
+            "reused_prompt_scores": reused_prompt_scores,
         },
     )
     if not tasks:
@@ -73,6 +124,9 @@ def main() -> None:
                 "templates": config.score_templates,
                 "completed_prompt_scores": len(completed_keys),
                 "averaged_item_scores": len(aggregated_rows),
+                "reused_prompt_scores": sum(
+                    1 for row in load_jsonl(per_template_path) if row.get("reused_from_run_id")
+                ),
             },
         )
         write_stage_status(
@@ -83,6 +137,9 @@ def main() -> None:
                 "bank_items": len(bank_records),
                 "completed_prompt_scores": len(completed_keys),
                 "averaged_item_scores": len(aggregated_rows),
+                "reused_prompt_scores": sum(
+                    1 for row in load_jsonl(per_template_path) if row.get("reused_from_run_id")
+                ),
             },
         )
         print("[imt-scores] no missing prompt scores")
@@ -158,6 +215,7 @@ def main() -> None:
                 "completed_prompt_scores": len(completed_keys) + completed_now,
                 "completed_this_run": completed_now,
                 "parse_failures_this_run": parse_failures,
+                "reused_prompt_scores": reused_prompt_scores,
             },
         )
 
@@ -184,6 +242,7 @@ def main() -> None:
         "completed_prompt_scores": len(load_completed_template_keys(per_template_path)),
         "averaged_item_scores": aggregated_count,
         "parse_failures_this_run": parse_failures,
+        "reused_prompt_scores": sum(1 for row in per_template_rows if row.get("reused_from_run_id")),
     }
     write_json(summary_path, summary_payload)
     if aggregated_count != len(bank_records):
