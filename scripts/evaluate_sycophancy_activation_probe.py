@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import os
 from pathlib import Path
+from typing import Any
 
 from deception_honesty_axis.activation_row_targets import (
     ensure_pooling_compatibility,
@@ -72,6 +74,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-root", type=Path, default=Path("artifacts"), help="Repo artifact root.")
     parser.add_argument("--model-name", default="meta-llama/Llama-3.2-3B-Instruct", help="Model slug for run path.")
     parser.add_argument("--axis-name", default="sycophancy-pilot-v1", help="Axis slug for run path.")
+    parser.add_argument("--target-name", default=None, help="Optional target identifier used in artifact naming and manifests.")
     parser.add_argument("--run-id", default=None, help="Optional fixed run id.")
     parser.add_argument(
         "--methods",
@@ -111,23 +114,24 @@ def axis_expected_pooling(axis_bundle_dir: Path) -> str | None:
     return str(load_config(config_path).analysis.get("pooling") or "")
 
 
+def infer_target_name(args: argparse.Namespace, source_manifest: dict[str, Any], dataset_names: list[str]) -> str | None:
+    if args.target_name:
+        return str(args.target_name)
+    repo_id = source_manifest.get("repo_id")
+    split = source_manifest.get("split")
+    if repo_id and split:
+        return f"{str(repo_id).split('/')[-1]}-{split}"
+    named_datasets = sorted(name for name in dataset_names if name != "all")
+    if len(named_datasets) == 1:
+        return named_datasets[0]
+    return None
+
+
 def main() -> None:
     args = parse_args()
     invalid_methods = [method for method in args.methods if method not in ZERO_SHOT_METHODS]
     if invalid_methods:
         raise ValueError(f"Only zero-shot methods are supported here; invalid={invalid_methods}")
-
-    run_id = args.run_id or make_run_id()
-    run_root = ensure_dir(
-        args.artifact_root
-        / "runs"
-        / "sycophancy-activation-probe"
-        / slugify(args.model_name)
-        / slugify(args.axis_name)
-        / run_id
-    )
-    for relative in ("inputs", "results", "logs", "checkpoints", "meta"):
-        ensure_dir(run_root / relative)
 
     axis_bundle_dir = args.axis_bundle_run_dir.resolve()
     axis_bundle_path = axis_bundle_dir / "results" / "axis_bundle.pt"
@@ -183,11 +187,27 @@ def main() -> None:
     dataset_sources = stacked.group_values
     groups = grouped_indices(dataset_sources)
     dataset_names = list(groups.keys())
+    target_name = infer_target_name(args, source_manifest, dataset_names)
+
+    run_id = args.run_id or make_run_id()
+    run_path = (
+        args.artifact_root
+        / "runs"
+        / "sycophancy-activation-probe"
+        / slugify(args.model_name)
+        / slugify(args.axis_name)
+    )
+    if target_name:
+        run_path = run_path / slugify(target_name)
+    run_root = ensure_dir(run_path / run_id)
+    for relative in ("inputs", "results", "logs", "checkpoints", "meta"):
+        ensure_dir(run_root / relative)
 
     write_analysis_manifest(
         run_root,
         {
             "run_id": run_id,
+            "target_name": target_name,
             "axis_bundle_run_dir": str(axis_bundle_dir),
             "axis_bundle_path": str(axis_bundle_path),
             "activation_source": source_manifest,
@@ -208,7 +228,7 @@ def main() -> None:
         run_root,
         "evaluate_sycophancy_activation_probe",
         "running",
-        {"record_count": int(labels.shape[0]), "datasets": dataset_names, "methods": args.methods},
+        {"record_count": int(labels.shape[0]), "datasets": dataset_names, "methods": args.methods, "target_name": target_name},
     )
 
     metrics_path = run_root / "results" / "pairwise_metrics.csv"
@@ -332,6 +352,7 @@ def main() -> None:
         "evaluate_sycophancy_activation_probe",
         "completed",
         {
+            "target_name": target_name,
             "expected_combinations": total_expected,
             "completed_combinations": len(completed_keys),
             "heatmaps": heatmap_paths,

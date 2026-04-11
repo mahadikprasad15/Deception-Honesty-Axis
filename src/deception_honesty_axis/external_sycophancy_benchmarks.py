@@ -1,0 +1,382 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+import os
+from pathlib import Path
+from typing import Any, Callable
+
+from deception_honesty_axis.common import slugify, write_jsonl
+
+
+EXTERNAL_SYCOPHANCY_ADAPTERS = {
+    "gsm8k_sycophancy": "praneethd7/gsm8k_sycophancy",
+    "ariana_sycophancy": "arianaazarbal/sycophancy_dataset",
+    "open_ended_sycophancy": "henrypapadatos/Open-ended_sycophancy",
+}
+
+LABEL_NAME_TO_VALUE = {
+    "sycophantic": 1,
+    "agreeable": 1,
+    "reasoning": 0,
+    "not_sycophantic": 0,
+    "non_sycophantic": 0,
+    "honest": 0,
+    "truthful": 0,
+}
+
+
+@dataclass(frozen=True)
+class ExternalSycophancyExample:
+    ids: str
+    pair_id: str
+    dataset_source: str
+    source_repo_id: str
+    source_split: str
+    source_record_id: str
+    adapter_name: str
+    label_name: str
+    label: int
+    category: str
+    prompt_messages: tuple[dict[str, str], ...]
+    assistant_output: str
+
+    def manifest_row(self) -> dict[str, Any]:
+        return {
+            "ids": self.ids,
+            "pair_id": self.pair_id,
+            "dataset_source": self.dataset_source,
+            "source_repo_id": self.source_repo_id,
+            "source_split": self.source_split,
+            "source_record_id": self.source_record_id,
+            "adapter_name": self.adapter_name,
+            "label_name": self.label_name,
+            "label": self.label,
+            "category": self.category,
+            "prompt_messages": list(self.prompt_messages),
+            "assistant_output": self.assistant_output,
+        }
+
+
+@dataclass(frozen=True)
+class MaterializedExternalSycophancyRecord:
+    ids: str
+    pair_id: str
+    dataset_source: str
+    source_repo_id: str
+    source_split: str
+    source_record_id: str
+    adapter_name: str
+    label_name: str
+    label: int
+    category: str
+    prompt_text: str
+    activation_text: str
+
+    def output_without_activation(self) -> dict[str, Any]:
+        return {
+            "ids": self.ids,
+            "pair_id": self.pair_id,
+            "dataset_source": self.dataset_source,
+            "source_repo_id": self.source_repo_id,
+            "source_split": self.source_split,
+            "source_record_id": self.source_record_id,
+            "adapter_name": self.adapter_name,
+            "label_name": self.label_name,
+            "label": self.label,
+            "category": self.category,
+        }
+
+
+class ExternalSycophancyActivationDataset:
+    def __init__(self, records: list[MaterializedExternalSycophancyRecord]) -> None:
+        self.records = records
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, index: int) -> MaterializedExternalSycophancyRecord:
+        return self.records[index]
+
+
+def _stable_hash(*parts: str) -> str:
+    joined = "|".join(parts)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
+
+
+def _normalize_label_name(value: Any) -> str:
+    text = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    while "__" in text:
+        text = text.replace("__", "_")
+    return text
+
+
+def map_external_label(value: Any) -> tuple[int, str]:
+    if isinstance(value, bool):
+        return int(value), "sycophantic" if value else "not_sycophantic"
+    if isinstance(value, (int, float)) and int(value) in {0, 1}:
+        numeric = int(value)
+        return numeric, "sycophantic" if numeric == 1 else "not_sycophantic"
+
+    normalized = _normalize_label_name(value)
+    if normalized in LABEL_NAME_TO_VALUE:
+        return LABEL_NAME_TO_VALUE[normalized], normalized
+    raise ValueError(f"Unsupported external sycophancy label {value!r}")
+
+
+def _coerce_source_record_id(row: dict[str, Any], row_index: int) -> str:
+    for key in ("ids", "id", "row_id", "uuid"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return f"row-{row_index:06d}"
+
+
+def _require_text(row: dict[str, Any], key: str, *, context: str) -> str:
+    value = str(row.get(key) or "")
+    if not value:
+        raise ValueError(f"Missing {key!r} for {context}")
+    return value
+
+
+def _dataset_source_slug(repo_id: str, split: str) -> str:
+    return slugify(f"{repo_id.split('/')[-1]}-{split}")
+
+
+def _message_list_from_value(value: Any) -> list[dict[str, str]] | None:
+    parsed = value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(parsed, list):
+        return None
+
+    messages: list[dict[str, str]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            return None
+        role = str(item.get("role") or "").strip()
+        content = str(item.get("content") or "")
+        if not role:
+            return None
+        messages.append({"role": role, "content": content})
+    return messages or None
+
+
+def _find_message_list(row: dict[str, Any]) -> list[dict[str, str]]:
+    candidate_keys = (
+        "messages",
+        "conversation",
+        "conversations",
+        "chat",
+        "dialogue",
+        "train_SFT",
+        "sft_messages",
+    )
+    for key in candidate_keys:
+        parsed = _message_list_from_value(row.get(key))
+        if parsed is not None:
+            return parsed
+    for value in row.values():
+        parsed = _message_list_from_value(value)
+        if parsed is not None:
+            return parsed
+    raise ValueError("Could not find a chat message list in the dataset row")
+
+
+def _split_prompt_messages(messages: list[dict[str, str]]) -> tuple[tuple[dict[str, str], ...], str]:
+    if not messages:
+        raise ValueError("Expected at least one chat message")
+    if messages[-1].get("role") != "assistant":
+        raise ValueError("Expected the last chat message to be the target assistant output")
+    assistant_output = str(messages[-1].get("content") or "")
+    prompt_messages = tuple(
+        {
+            "role": str(message.get("role") or ""),
+            "content": str(message.get("content") or ""),
+        }
+        for message in messages[:-1]
+    )
+    if not assistant_output:
+        raise ValueError("Assistant output is empty")
+    if not prompt_messages:
+        raise ValueError("Prompt messages are empty")
+    return prompt_messages, assistant_output
+
+
+def render_chat_text(tokenizer, messages: list[dict[str, str]], *, add_generation_prompt: bool) -> str:  # noqa: ANN001
+    if hasattr(tokenizer, "apply_chat_template"):
+        return str(
+            tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+        )
+    lines = [f"{message['role'].capitalize()}: {message['content']}" for message in messages]
+    if add_generation_prompt:
+        lines.append("Assistant:")
+    return "\n".join(lines)
+
+
+def materialize_external_examples(
+    tokenizer,  # noqa: ANN001
+    examples: list[ExternalSycophancyExample],
+) -> list[MaterializedExternalSycophancyRecord]:
+    materialized: list[MaterializedExternalSycophancyRecord] = []
+    for example in examples:
+        prompt_messages = list(example.prompt_messages)
+        prompt_text = render_chat_text(tokenizer, prompt_messages, add_generation_prompt=True)
+        activation_text = render_chat_text(
+            tokenizer,
+            prompt_messages + [{"role": "assistant", "content": example.assistant_output}],
+            add_generation_prompt=False,
+        )
+        materialized.append(
+            MaterializedExternalSycophancyRecord(
+                ids=example.ids,
+                pair_id=example.pair_id,
+                dataset_source=example.dataset_source,
+                source_repo_id=example.source_repo_id,
+                source_split=example.source_split,
+                source_record_id=example.source_record_id,
+                adapter_name=example.adapter_name,
+                label_name=example.label_name,
+                label=example.label,
+                category=example.category,
+                prompt_text=prompt_text,
+                activation_text=activation_text,
+            )
+        )
+    return materialized
+
+
+def write_external_example_manifest(run_root: Path, examples: list[ExternalSycophancyExample]) -> None:
+    write_jsonl(run_root / "inputs" / "normalized_examples.jsonl", (example.manifest_row() for example in examples))
+
+
+def _paired_completion_examples(
+    *,
+    rows: list[dict[str, Any]],
+    repo_id: str,
+    split: str,
+    adapter_name: str,
+) -> list[ExternalSycophancyExample]:
+    dataset_source = _dataset_source_slug(repo_id, split)
+    examples: list[ExternalSycophancyExample] = []
+    for row_index, row in enumerate(rows):
+        source_record_id = _coerce_source_record_id(row, row_index)
+        prompt = _require_text(row, "prompt", context=source_record_id)
+        pair_id = _stable_hash(dataset_source, prompt.strip().lower())
+        category = str(row.get("category") or "")
+        prompt_messages = ({"role": "user", "content": prompt},)
+        variants = [
+            ("sycophantic", 1, _require_text(row, "sycophantic", context=source_record_id)),
+            ("not_sycophantic", 0, _require_text(row, "not_sycophantic", context=source_record_id)),
+        ]
+        for label_name, label, assistant_output in variants:
+            examples.append(
+                ExternalSycophancyExample(
+                    ids=f"{dataset_source}::{source_record_id}::{label_name}",
+                    pair_id=pair_id,
+                    dataset_source=dataset_source,
+                    source_repo_id=repo_id,
+                    source_split=split,
+                    source_record_id=source_record_id,
+                    adapter_name=adapter_name,
+                    label_name=label_name,
+                    label=label,
+                    category=category,
+                    prompt_messages=prompt_messages,
+                    assistant_output=assistant_output,
+                )
+            )
+    return examples
+
+
+def _gsm8k_sycophancy_examples(
+    *,
+    rows: list[dict[str, Any]],
+    repo_id: str,
+    split: str,
+    adapter_name: str,
+) -> list[ExternalSycophancyExample]:
+    dataset_source = _dataset_source_slug(repo_id, split)
+    examples: list[ExternalSycophancyExample] = []
+    for row_index, row in enumerate(rows):
+        source_record_id = _coerce_source_record_id(row, row_index)
+        prompt_messages, assistant_output = _split_prompt_messages(_find_message_list(row))
+        label_value, label_name = map_external_label(row.get("label"))
+        question_text = str(row.get("question") or row.get("prompt") or "")
+        pair_seed = question_text or json.dumps(list(prompt_messages), sort_keys=True)
+        examples.append(
+            ExternalSycophancyExample(
+                ids=f"{dataset_source}::{source_record_id}",
+                pair_id=_stable_hash(dataset_source, pair_seed.strip().lower()),
+                dataset_source=dataset_source,
+                source_repo_id=repo_id,
+                source_split=split,
+                source_record_id=source_record_id,
+                adapter_name=adapter_name,
+                label_name=label_name,
+                label=label_value,
+                category="",
+                prompt_messages=prompt_messages,
+                assistant_output=assistant_output,
+            )
+        )
+    return examples
+
+
+ADAPTER_BUILDERS: dict[str, Callable[..., list[ExternalSycophancyExample]]] = {
+    "gsm8k_sycophancy": _gsm8k_sycophancy_examples,
+    "ariana_sycophancy": _paired_completion_examples,
+    "open_ended_sycophancy": _paired_completion_examples,
+}
+
+
+def resolve_external_sycophancy_adapter(adapter_name: str | None, repo_id: str) -> str:
+    if adapter_name:
+        normalized = str(adapter_name).strip()
+        if normalized not in ADAPTER_BUILDERS:
+            raise ValueError(f"Unsupported adapter {adapter_name!r}; choices={sorted(ADAPTER_BUILDERS)}")
+        return normalized
+    for candidate_name, candidate_repo_id in EXTERNAL_SYCOPHANCY_ADAPTERS.items():
+        if candidate_repo_id == repo_id:
+            return candidate_name
+    raise ValueError(f"Could not infer adapter for repo_id={repo_id!r}; pass --adapter explicitly")
+
+
+def load_external_sycophancy_examples(
+    *,
+    repo_id: str,
+    split: str,
+    adapter_name: str | None = None,
+) -> tuple[list[ExternalSycophancyExample], dict[str, Any]]:
+    from datasets import load_dataset
+
+    resolved_adapter = resolve_external_sycophancy_adapter(adapter_name, repo_id)
+    dataset = load_dataset(repo_id, split=split, token=os.environ.get("HF_TOKEN"))
+    rows = [dict(row) for row in dataset]
+    examples = ADAPTER_BUILDERS[resolved_adapter](
+        rows=rows,
+        repo_id=repo_id,
+        split=split,
+        adapter_name=resolved_adapter,
+    )
+    manifest = {
+        "source_type": "hf_dataset",
+        "repo_id": repo_id,
+        "split": split,
+        "adapter_name": resolved_adapter,
+        "dataset_source": _dataset_source_slug(repo_id, split),
+        "raw_row_count": len(rows),
+        "normalized_record_count": len(examples),
+    }
+    return examples, manifest
