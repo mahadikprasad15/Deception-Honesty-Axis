@@ -54,6 +54,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--artifact-root", type=Path, default=Path("artifacts"), help="Repo artifact root.")
     parser.add_argument("--run-id", default=None, help="Optional fixed run id.")
+    parser.add_argument("--max-samples", type=int, default=None, help="Optional cap on normalized examples after adapter expansion.")
     parser.add_argument("--save-every", type=int, default=100, help="Save progress every N records.")
     parser.add_argument("--push-to-hub-repo-id", default=None, help="Optional HF dataset repo to push output to.")
     parser.add_argument("--private", action="store_true", help="Create/push private HF dataset when pushing.")
@@ -84,6 +85,7 @@ def main() -> None:
         repo_id=args.source_repo_id,
         split=args.source_split,
         adapter_name=args.adapter,
+        max_samples=args.max_samples,
     )
     tokenizer, model = load_tokenizer_and_model(args.model_name, dtype_from_name(args.dtype), args.device)
     materialized = materialize_external_examples(tokenizer, examples)
@@ -102,6 +104,7 @@ def main() -> None:
             "layer": args.layer,
             "activation_pooling": args.pooling,
             "batch_size": args.batch_size,
+            "max_samples": args.max_samples,
             "push_to_hub_repo_id": args.push_to_hub_repo_id,
             "add_special_tokens": bool(args.add_special_tokens),
         },

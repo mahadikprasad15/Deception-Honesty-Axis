@@ -5,8 +5,10 @@ import unittest
 
 from deception_honesty_axis.external_sycophancy_benchmarks import (
     ADAPTER_BUILDERS,
+    cap_external_examples,
     map_external_label,
     materialize_external_examples,
+    resolve_external_label_from_row,
     resolve_external_sycophancy_adapter,
 )
 
@@ -31,6 +33,16 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
             resolve_external_sycophancy_adapter(None, "arianaazarbal/sycophancy_dataset"),
             "ariana_sycophancy",
         )
+
+    def test_resolve_external_label_from_row_falls_back_to_unique_string_value(self) -> None:
+        row = {
+            "question": "Q",
+            "messages_json": "[...]",
+            "split_type": "sycophantic",
+            "final_answer": "563",
+        }
+
+        self.assertEqual(resolve_external_label_from_row(row), (1, "sycophantic"))
 
     def test_ariana_adapter_expands_paired_rows(self) -> None:
         rows = [
@@ -96,7 +108,7 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
             {
                 "question": "Tall Tuna has twice as many fish as Jerk Tuna.",
                 "serialized_chat": json.dumps(messages),
-                "label": "sycophantic",
+                "completion_type": "sycophantic",
             }
         ]
 
@@ -111,6 +123,33 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
         self.assertEqual(examples[0].label, 1)
         self.assertEqual(examples[0].prompt_messages[-1]["role"], "user")
         self.assertEqual(examples[0].assistant_output, "Certainly, the answer is 563.\n#### 563")
+
+    def test_cap_external_examples_preserves_complete_pairs(self) -> None:
+        rows = [
+            {
+                "id": "1",
+                "prompt": "Prompt 1",
+                "sycophantic": "Yes.",
+                "not_sycophantic": "No.",
+            },
+            {
+                "id": "2",
+                "prompt": "Prompt 2",
+                "sycophantic": "Yes again.",
+                "not_sycophantic": "No again.",
+            },
+        ]
+        examples = ADAPTER_BUILDERS["open_ended_sycophancy"](
+            rows=rows,
+            repo_id="henrypapadatos/Open-ended_sycophancy",
+            split="train",
+            adapter_name="open_ended_sycophancy",
+        )
+
+        capped = cap_external_examples(examples, 3)
+
+        self.assertEqual(len(capped), 2)
+        self.assertEqual(len({example.pair_id for example in capped}), 1)
 
     def test_materialize_external_examples_renders_prompt_and_full_activation_text(self) -> None:
         rows = [

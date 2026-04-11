@@ -26,6 +26,20 @@ LABEL_NAME_TO_VALUE = {
     "truthful": 0,
 }
 
+LABEL_CANDIDATE_KEYS = (
+    "label",
+    "labels",
+    "completion_label",
+    "completion_type",
+    "response_label",
+    "response_type",
+    "target_label",
+    "target_type",
+    "variant",
+    "kind",
+    "type",
+)
+
 
 @dataclass(frozen=True)
 class ExternalSycophancyExample:
@@ -123,6 +137,34 @@ def map_external_label(value: Any) -> tuple[int, str]:
     if normalized in LABEL_NAME_TO_VALUE:
         return LABEL_NAME_TO_VALUE[normalized], normalized
     raise ValueError(f"Unsupported external sycophancy label {value!r}")
+
+
+def resolve_external_label_from_row(row: dict[str, Any]) -> tuple[int, str]:
+    for key in LABEL_CANDIDATE_KEYS:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return map_external_label(value)
+        except ValueError:
+            continue
+
+    discovered: dict[tuple[int, str], str] = {}
+    for key, value in row.items():
+        if not isinstance(value, str):
+            continue
+        try:
+            mapped = map_external_label(value)
+        except ValueError:
+            continue
+        discovered.setdefault(mapped, key)
+    if len(discovered) == 1:
+        return next(iter(discovered))
+    if len(discovered) > 1:
+        raise ValueError(f"Multiple possible external labels found in row: {sorted(discovered.values())}")
+    raise ValueError("Could not infer an external sycophancy label from the dataset row")
 
 
 def _coerce_source_record_id(row: dict[str, Any], row_index: int) -> str:
@@ -312,7 +354,7 @@ def _gsm8k_sycophancy_examples(
     for row_index, row in enumerate(rows):
         source_record_id = _coerce_source_record_id(row, row_index)
         prompt_messages, assistant_output = _split_prompt_messages(_find_message_list(row))
-        label_value, label_name = map_external_label(row.get("label"))
+        label_value, label_name = resolve_external_label_from_row(row)
         question_text = str(row.get("question") or row.get("prompt") or "")
         pair_seed = question_text or json.dumps(list(prompt_messages), sort_keys=True)
         examples.append(
@@ -332,6 +374,34 @@ def _gsm8k_sycophancy_examples(
             )
         )
     return examples
+
+
+def cap_external_examples(
+    examples: list[ExternalSycophancyExample],
+    max_samples: int | None,
+) -> list[ExternalSycophancyExample]:
+    if max_samples is None:
+        return examples
+    limit = int(max_samples)
+    if limit <= 0 or len(examples) <= limit:
+        return examples
+
+    capped = list(examples[:limit])
+    total_by_pair = {example.pair_id: 0 for example in examples}
+    capped_by_pair = {example.pair_id: 0 for example in capped}
+    for example in examples:
+        total_by_pair[example.pair_id] = total_by_pair.get(example.pair_id, 0) + 1
+    for example in capped:
+        capped_by_pair[example.pair_id] = capped_by_pair.get(example.pair_id, 0) + 1
+
+    incomplete_pair_ids = {
+        pair_id
+        for pair_id, capped_count in capped_by_pair.items()
+        if capped_count < total_by_pair.get(pair_id, capped_count)
+    }
+    if incomplete_pair_ids:
+        capped = [example for example in capped if example.pair_id not in incomplete_pair_ids]
+    return capped
 
 
 ADAPTER_BUILDERS: dict[str, Callable[..., list[ExternalSycophancyExample]]] = {
@@ -358,6 +428,7 @@ def load_external_sycophancy_examples(
     repo_id: str,
     split: str,
     adapter_name: str | None = None,
+    max_samples: int | None = None,
 ) -> tuple[list[ExternalSycophancyExample], dict[str, Any]]:
     from datasets import load_dataset
 
@@ -370,6 +441,7 @@ def load_external_sycophancy_examples(
         split=split,
         adapter_name=resolved_adapter,
     )
+    capped_examples = cap_external_examples(examples, max_samples)
     manifest = {
         "source_type": "hf_dataset",
         "repo_id": repo_id,
@@ -378,5 +450,7 @@ def load_external_sycophancy_examples(
         "dataset_source": _dataset_source_slug(repo_id, split),
         "raw_row_count": len(rows),
         "normalized_record_count": len(examples),
+        "max_samples": max_samples,
+        "selected_record_count": len(capped_examples),
     }
-    return examples, manifest
+    return capped_examples, manifest
