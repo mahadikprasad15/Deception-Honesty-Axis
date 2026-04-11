@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from deception_honesty_axis.common import make_run_id, read_json, utc_now_iso, write_json
+from deception_honesty_axis.analysis import infer_activation_layer_numbers
 from deception_honesty_axis.config import corpus_root as resolve_corpus_root, load_config
 from deception_honesty_axis.indexes import load_index
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
@@ -382,7 +383,8 @@ def main() -> None:
             role_question_count[key] = 1
 
     example_tensor = next(iter(role_question_sum.values()))
-    resolved_spec = resolve_layer_specs(int(example_tensor.shape[0]), [args.layer_spec])[0]
+    activation_layer_numbers = infer_activation_layer_numbers(records)
+    resolved_spec = resolve_layer_specs(int(example_tensor.shape[0]), [args.layer_spec], activation_layer_numbers)[0]
     target_datasets = args.target_dataset or transfer_config.target_datasets
 
     split_cache: dict[str, Any] = {}
@@ -433,6 +435,7 @@ def main() -> None:
             deceptive_roles=list(deceptive_roles),
             anchor_role=transfer_config.anchor_role,
             layer_specs=[resolved_spec.key],
+            layer_numbers=activation_layer_numbers,
         )
         layer_bundle = bundle["layers"][resolved_spec.key]
         per_dataset: list[dict[str, Any]] = []

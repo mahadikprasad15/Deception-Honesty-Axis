@@ -125,6 +125,24 @@ class ExperimentConfig:
         return dict(self.raw["analysis"])
 
     @property
+    def activation_layer_numbers(self) -> list[int] | None:
+        raw_layers = self.raw.get("analysis", {}).get("activation_layers")
+        if raw_layers is None:
+            raw_layers = self.raw.get("activations", {}).get("layers")
+        if raw_layers is None:
+            return None
+        if isinstance(raw_layers, str):
+            if raw_layers.strip().lower() == "all":
+                return None
+            raw_layers = [raw_layers]
+        layer_numbers = [int(layer) for layer in raw_layers]
+        if not layer_numbers:
+            raise ValueError("activation_layers must be non-empty or 'all'")
+        if any(layer_number < 1 for layer_number in layer_numbers):
+            raise ValueError(f"activation_layers must be 1-based positive layer numbers: {layer_numbers}")
+        return layer_numbers
+
+    @property
     def hf(self) -> dict[str, Any]:
         if "hf" in self.raw:
             return dict(self.raw["hf"])

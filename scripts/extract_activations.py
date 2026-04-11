@@ -22,7 +22,7 @@ from deception_honesty_axis.work_units import build_work_units
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Extract pooled all-layer activations for rollout records.")
+    parser = argparse.ArgumentParser(description="Extract pooled response activations for rollout records.")
     parser.add_argument(
         "--config",
         type=Path,
@@ -38,34 +38,76 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _capture_layer_outputs(model, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+def _resolve_activation_layer_numbers(model, requested_layers: list[int] | None) -> list[int]:
+    layer_count = len(model.model.layers)
+    if requested_layers is None:
+        return list(range(1, layer_count + 1))
+
+    seen: set[int] = set()
+    resolved: list[int] = []
+    for layer_number in requested_layers:
+        if layer_number in seen:
+            continue
+        if layer_number < 1 or layer_number > layer_count:
+            raise ValueError(f"Requested activation layer {layer_number} is out of range for {layer_count} model layers")
+        resolved.append(layer_number)
+        seen.add(layer_number)
+    if not resolved:
+        raise ValueError("At least one activation layer must be selected")
+    return resolved
+
+
+def _capture_layer_outputs(
+    model,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    layer_numbers: list[int],
+) -> torch.Tensor:
     import torch
 
-    captured: list[torch.Tensor] = []
+    captured_by_layer: dict[int, torch.Tensor] = {}
     hooks = []
-    for layer in model.model.layers:
-        hooks.append(
-            layer.register_forward_hook(
-                lambda _module, _inputs, output: captured.append((output[0] if isinstance(output, tuple) else output).detach())
-            )
-        )
+    def make_hook(layer_number: int):  # noqa: ANN202
+        def hook(_module, _inputs, output) -> None:  # noqa: ANN001
+            captured_by_layer[layer_number] = (output[0] if isinstance(output, tuple) else output).detach()
+
+        return hook
+
+    for layer_number in layer_numbers:
+        layer = model.model.layers[layer_number - 1]
+        hooks.append(layer.register_forward_hook(make_hook(layer_number)))
     try:
         with torch.no_grad():
             model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
     finally:
         for hook in hooks:
             hook.remove()
-    return torch.stack(captured, dim=0)
+    return torch.stack([captured_by_layer[layer_number] for layer_number in layer_numbers], dim=0)
 
 
-def flush_activation_buffer(corpus_path: Path, role: str, records: list[dict], index_records: list[dict]) -> None:
+def _activation_row_matches_request(row: dict, requested_layer_numbers: list[int] | None) -> bool:
+    if requested_layer_numbers is None:
+        return True
+    raw_layers = row.get("activation_layer_numbers")
+    if raw_layers is None:
+        return False
+    return [int(layer_number) for layer_number in raw_layers] == requested_layer_numbers
+
+
+def flush_activation_buffer(
+    corpus_path: Path,
+    role: str,
+    records: list[dict],
+    index_records: list[dict],
+    activation_layer_numbers: list[int],
+) -> None:
     import torch
 
     if not records:
         return
     shard_path = next_shard_path(corpus_path, "activations", role, ".pt")
     ensure_dir(shard_path.parent)
-    torch.save({"records": records}, shard_path)
+    torch.save({"records": records, "activation_layer_numbers": activation_layer_numbers}, shard_path)
     relative = str(shard_path.relative_to(corpus_path))
     for record in index_records:
         record["shard_path"] = relative
@@ -84,7 +126,13 @@ def main() -> None:
     target_ids = {unit["item_id"] for unit in work_units}
     rollout_index = load_index(corpus_path, "rollouts")
     activation_index = load_index(corpus_path, "activations")
-    rollout_rows = [row for item_id, row in rollout_index.items() if item_id in target_ids and item_id not in activation_index]
+    requested_layer_numbers = config.activation_layer_numbers
+    completed_activation_ids = {
+        item_id
+        for item_id, row in activation_index.items()
+        if item_id in target_ids and _activation_row_matches_request(row, requested_layer_numbers)
+    }
+    rollout_rows = [row for item_id, row in rollout_index.items() if item_id in target_ids and item_id not in completed_activation_ids]
 
     write_stage_status(
         corpus_path,
@@ -94,7 +142,12 @@ def main() -> None:
     )
 
     if not rollout_rows:
-        write_stage_status(corpus_path, "extract_activations", "completed", {"activated_items": len(activation_index)})
+        write_stage_status(
+            corpus_path,
+            "extract_activations",
+            "completed",
+            {"activated_items": len(completed_activation_ids), "requested_activation_layer_numbers": requested_layer_numbers},
+        )
         print("No missing activation work units.")
         return
 
@@ -105,6 +158,8 @@ def main() -> None:
     model_settings["name"] = config.model_id
     tokenizer, model = load_model_and_tokenizer(model_settings)
     model_device = next(model.parameters()).device
+    activation_layer_numbers = _resolve_activation_layer_numbers(model, config.activation_layer_numbers)
+    print(f"[activations] capturing layers {activation_layer_numbers}")
     rollout_records = load_rollout_records(corpus_path, rollout_rows)
     save_every = int(config.saving["save_every"])
     activation_buffers: dict[str, list[dict]] = defaultdict(list)
@@ -147,7 +202,7 @@ def main() -> None:
         full_ids = full_ids.to(model_device)
         attention_mask = attention_mask.to(model_device)
         response_start = int(prefix_ids.shape[-1])
-        captured = _capture_layer_outputs(model, full_ids, attention_mask)
+        captured = _capture_layer_outputs(model, full_ids, attention_mask, activation_layer_numbers)
         response_slice = captured[:, 0, response_start:, :]
         if response_slice.shape[1] == 0:
             response_slice = captured[:, 0, -1:, :]
@@ -164,6 +219,7 @@ def main() -> None:
                 "question_metadata": rollout_record.get("question_metadata", {}),
                 "prompt_id": rollout_record["prompt_id"],
                 "pooled_activations": pooled,
+                "activation_layer_numbers": activation_layer_numbers,
                 "response_token_count": int(response_slice.shape[1]),
             }
         )
@@ -174,10 +230,11 @@ def main() -> None:
                 "role_source": rollout_record.get("role_source"),
                 "question_id": rollout_record["question_id"],
                 "prompt_id": rollout_record["prompt_id"],
+                "activation_layer_numbers": activation_layer_numbers,
             }
         )
         if len(activation_buffers[role]) >= save_every:
-            flush_activation_buffer(corpus_path, role, activation_buffers[role], index_buffers[role])
+            flush_activation_buffer(corpus_path, role, activation_buffers[role], index_buffers[role], activation_layer_numbers)
 
         write_json(
             corpus_path / "checkpoints" / "extract_activations_progress.json",
@@ -199,19 +256,30 @@ def main() -> None:
             )
 
     for role in list(activation_buffers):
-        flush_activation_buffer(corpus_path, role, activation_buffers[role], index_buffers[role])
+        flush_activation_buffer(corpus_path, role, activation_buffers[role], index_buffers[role], activation_layer_numbers)
 
     final_activations = load_index(corpus_path, "activations")
+    final_matching_activation_ids = {
+        item_id
+        for item_id, row in final_activations.items()
+        if item_id in target_ids and _activation_row_matches_request(row, activation_layer_numbers)
+    }
     update_coverage(
         corpus_path,
         {
             "target_items": len(work_units),
             "rollouts_completed": len(rollout_index),
-            "activations_completed": len(final_activations),
+            "activations_completed": len(final_matching_activation_ids),
+            "activation_layer_numbers": activation_layer_numbers,
             "updated_at": utc_now_iso(),
         },
     )
-    write_stage_status(corpus_path, "extract_activations", "completed", {"activated_items": len(final_activations)})
+    write_stage_status(
+        corpus_path,
+        "extract_activations",
+        "completed",
+        {"activated_items": len(final_matching_activation_ids), "activation_layer_numbers": activation_layer_numbers},
+    )
     total_elapsed = max(time.monotonic() - started_at, 1e-6)
     print(f"[activations] completed {len(rollout_rows)} items this run in {total_elapsed/60:.1f} min")
     print(f"Extracted activations for {len(final_activations)} items.")

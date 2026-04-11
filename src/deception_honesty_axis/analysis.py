@@ -19,6 +19,31 @@ def mean_role_vectors(records: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
     }
 
 
+def infer_activation_layer_numbers(records: list[dict[str, Any]]) -> list[int]:
+    if not records:
+        return []
+
+    first_tensor = records[0]["pooled_activations"]
+    layer_count = int(first_tensor.shape[0])
+    fallback = list(range(1, layer_count + 1))
+    inferred: list[int] | None = None
+    for record in records:
+        raw_layers = record.get("activation_layer_numbers")
+        if raw_layers is None:
+            continue
+        layer_numbers = [int(layer_number) for layer_number in raw_layers]
+        if len(layer_numbers) != int(record["pooled_activations"].shape[0]):
+            raise ValueError(
+                "activation_layer_numbers length does not match pooled_activations layer dimension "
+                f"for item {record.get('item_id')}"
+            )
+        if inferred is None:
+            inferred = layer_numbers
+        elif inferred != layer_numbers:
+            raise ValueError("Mixed activation_layer_numbers metadata found in the selected activation records")
+    return inferred or fallback
+
+
 def cosine_similarity(left: torch.Tensor, right: torch.Tensor) -> float:
     import torch
 
@@ -140,7 +165,7 @@ def _layer_coordinates(
     x_index: int,
     y_index: int,
 ) -> dict[str, tuple[float, float]]:
-    layer_entry = next((entry for entry in layers if int(entry["layer"]) == layer_index), None)
+    layer_entry = next((entry for entry in layers if int(entry.get("layer_number", int(entry["layer"]) + 1)) == layer_index), None)
     if layer_entry is None:
         return {}
 
@@ -207,6 +232,8 @@ def write_pca_report_artifacts(
 
     for layer_entry in layers:
         layer_index = int(layer_entry["layer"])
+        layer_number = int(layer_entry.get("layer_number", layer_index + 1))
+        layer_label = str(layer_entry.get("layer_label", f"L{layer_number}"))
         anchor_projection = [float(value) for value in layer_entry["anchor_projection"]]
         contrast_pc_cosines = [float(value) for value in layer_entry["contrast_pc_cosines"]]
         explained = [float(value) for value in layer_entry["explained_variance_ratio"]]
@@ -224,6 +251,8 @@ def write_pca_report_artifacts(
             role_rows.append(
                 {
                     "layer": layer_index,
+                    "layer_number": layer_number,
+                    "layer_label": layer_label,
                     "role": role_name,
                     "is_anchor": role_name == anchor_role,
                     "pc1_projection": _safe_projection(projections, 0),
@@ -241,6 +270,8 @@ def write_pca_report_artifacts(
             ranking_rows.append(
                 {
                     "layer": layer_index,
+                    "layer_number": layer_number,
+                    "layer_label": layer_label,
                     "pc_index": pc_index + 1,
                     "explained_variance_ratio": explained[pc_index] if pc_index < len(explained) else None,
                     "default_projection": default_projection,
@@ -257,6 +288,8 @@ def write_pca_report_artifacts(
         layer_summary_rows.append(
             {
                 "layer": layer_index,
+                "layer_number": layer_number,
+                "layer_label": layer_label,
                 "top_pc_by_default_abs": top_default_pc,
                 "top_pc_by_contrast_abs_cosine": top_contrast_pc,
                 "default_pc1_abs_projection": abs(anchor_projection[0]) if anchor_projection else None,
@@ -270,6 +303,8 @@ def write_pca_report_artifacts(
         tables_dir / "role_pc_projections.csv",
         [
             "layer",
+            "layer_number",
+            "layer_label",
             "role",
             "is_anchor",
             "pc1_projection",
@@ -285,6 +320,8 @@ def write_pca_report_artifacts(
         tables_dir / "pc_rankings.csv",
         [
             "layer",
+            "layer_number",
+            "layer_label",
             "pc_index",
             "explained_variance_ratio",
             "default_projection",
@@ -300,6 +337,8 @@ def write_pca_report_artifacts(
         tables_dir / "layer_summary.csv",
         [
             "layer",
+            "layer_number",
+            "layer_label",
             "top_pc_by_default_abs",
             "top_pc_by_contrast_abs_cosine",
             "default_pc1_abs_projection",
@@ -330,7 +369,7 @@ def write_pca_report_artifacts(
                 layers,
                 anchor_role,
                 role_names,
-                selected_layer - 1,
+                selected_layer,
                 x_index,
                 y_index,
             )
@@ -350,7 +389,10 @@ def write_pca_report_artifacts(
             [row[index] if index < len(row) else 0.0 for index in range(max_pc_count)]
             for row in contrast_matrix
         ]
-        layer_labels = [f"Layer {layer_entry['layer']}" for layer_entry in layers]
+        layer_labels = [
+            str(layer_entry.get("layer_label", f"L{int(layer_entry.get('layer_number', int(layer_entry['layer']) + 1))}"))
+            for layer_entry in layers
+        ]
         _save_heatmap(
             plots_dir / "default_abs_projection_heatmap.png",
             default_heatmap,

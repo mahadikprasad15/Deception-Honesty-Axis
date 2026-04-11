@@ -94,7 +94,11 @@ def main() -> None:
     )
     axis_bundle_dir = args.axis_bundle_run_dir.resolve()
     axis_bundle = load_role_axis_bundle(axis_bundle_dir / "results" / "axis_bundle.pt")
-    resolved_specs = resolve_layer_specs(axis_bundle["layer_count"], transfer_config.layer_specs)
+    resolved_specs = resolve_layer_specs(
+        axis_bundle["layer_count"],
+        transfer_config.layer_specs,
+        axis_bundle.get("activation_layer_numbers"),
+    )
 
     invalid_methods = [method for method in transfer_config.methods if method not in SUPPORTED_METHODS]
     if invalid_methods:

@@ -10,6 +10,7 @@ from typing import Any
 
 import torch
 
+from deception_honesty_axis.analysis import infer_activation_layer_numbers
 from deception_honesty_axis.common import ensure_dir, find_repo_root, load_jsonl, make_run_id, read_json, slugify, utc_now_iso, write_json
 from deception_honesty_axis.config import ExperimentConfig, corpus_root as resolve_corpus_root, load_config
 from deception_honesty_axis.indexes import load_index
@@ -232,7 +233,7 @@ def load_selected_role_entries(search_run_dir: Path, selection: dict[str, Any]) 
 def load_selected_role_vectors(
     search_run_dir: Path,
     repo_root: Path,
-) -> tuple[ExperimentConfig, dict[str, torch.Tensor], str, dict[str, Any], str, str, str | None]:
+) -> tuple[ExperimentConfig, dict[str, torch.Tensor], str, list[int], dict[str, Any], str, str, str | None]:
     selection = read_json(search_run_dir / "results" / "final_selection.json")
     experiment_config = resolve_experiment_config(search_run_dir, repo_root)
     selected_question_ids = set(load_selected_questions(search_run_dir, selection))
@@ -264,12 +265,13 @@ def load_selected_role_vectors(
         role_name: torch.stack(tensors, dim=0).mean(dim=0)
         for role_name, tensors in grouped.items()
     }
+    activation_layer_numbers = infer_activation_layer_numbers(records)
     layer_spec = str(selection["layer_spec"])
     relative_parts = search_run_dir.resolve().relative_to((repo_root / "artifacts" / "runs" / "fixed-track-search").resolve()).parts
     axis_id = axis_id_for_run(relative_parts)
     axis_label = compact_axis_label(relative_parts, selection)
     variant = variant_from_relative_parts(relative_parts)
-    return experiment_config, role_vectors, layer_spec, selection, axis_id, axis_label, variant
+    return experiment_config, role_vectors, layer_spec, activation_layer_numbers, selection, axis_id, axis_label, variant
 
 
 def resolve_model_components(model) -> tuple[Any, Any]:
@@ -400,13 +402,26 @@ def main() -> None:
 
     result_rows: list[dict[str, Any]] = []
     for search_run_dir in run_paths:
-        experiment_config, role_vectors, layer_spec, selection, axis_id, axis_label, variant = load_selected_role_vectors(search_run_dir, repo_root)
+        (
+            experiment_config,
+            role_vectors,
+            layer_spec,
+            activation_layer_numbers,
+            selection,
+            axis_id,
+            axis_label,
+            variant,
+        ) = load_selected_role_vectors(search_run_dir, repo_root)
         if axis_id in completed_axis_ids and not args.force:
             existing_path = run_root / "results" / f"{axis_id}.json"
             if existing_path.exists():
                 result_rows.extend(read_json(existing_path).get("rows", []))
             continue
-        resolved_spec = resolve_layer_specs(int(next(iter(role_vectors.values())).shape[0]), [layer_spec])[0]
+        resolved_spec = resolve_layer_specs(
+            int(next(iter(role_vectors.values())).shape[0]),
+            [layer_spec],
+            activation_layer_numbers,
+        )[0]
         anchor_role = "default"
         if anchor_role not in role_vectors:
             raise KeyError(f"Axis {axis_id} is missing anchor role '{anchor_role}'")

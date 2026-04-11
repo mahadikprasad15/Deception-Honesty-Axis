@@ -27,8 +27,20 @@ class RoleAxisTransferTest(unittest.TestCase):
         specs = resolve_layer_specs(28, ["7", "14", "21", "28", "last4_mean"])
         self.assertEqual([spec.key for spec in specs], ["7", "14", "21", "28", "last4_mean"])
         self.assertEqual(specs[0].layer_indices, (6,))
+        self.assertEqual(specs[0].layer_numbers, (7,))
         self.assertEqual(specs[3].layer_indices, (27,))
+        self.assertEqual(specs[3].layer_numbers, (28,))
         self.assertEqual(specs[4].layer_indices, (24, 25, 26, 27))
+        self.assertEqual(specs[4].layer_numbers, (25, 26, 27, 28))
+
+    def test_resolve_layer_specs_preserves_original_layer_number_for_selected_layers(self) -> None:
+        specs = resolve_layer_specs(1, ["14"], [14])
+        self.assertEqual(specs[0].key, "14")
+        self.assertEqual(specs[0].label, "L14")
+        self.assertEqual(specs[0].layer_indices, (0,))
+        self.assertEqual(specs[0].layer_numbers, (14,))
+        self.assertEqual(specs[0].indices_for_tensor(1), (0,))
+        self.assertEqual(specs[0].indices_for_tensor(28), (13,))
 
     def test_build_role_axis_bundle_aligns_pc1_to_honest_direction(self) -> None:
         role_vectors = {
@@ -201,6 +213,27 @@ class RoleAxisTransferTest(unittest.TestCase):
             with Path(outputs["layer_summary"]).open("r", encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(rows[0]["layer_spec"], "4")
+
+    def test_build_role_axis_bundle_accepts_selected_layer_metadata(self) -> None:
+        bundle = build_role_axis_bundle(
+            role_vectors={
+                "default": torch.tensor([[0.0, 0.0]]),
+                "judge": torch.tensor([[1.0, 0.0]]),
+                "validator": torch.tensor([[1.0, 0.0]]),
+                "spy": torch.tensor([[-1.0, 0.0]]),
+                "rogue": torch.tensor([[-1.0, 0.0]]),
+            },
+            honest_roles=["judge", "validator"],
+            deceptive_roles=["spy", "rogue"],
+            anchor_role="default",
+            layer_specs=["14"],
+            layer_numbers=[14],
+        )
+        self.assertEqual(bundle["layer_count"], 1)
+        self.assertEqual(bundle["activation_layer_numbers"], [14])
+        self.assertEqual(bundle["resolved_layer_specs"][0]["layer_indices"], [0])
+        self.assertEqual(bundle["resolved_layer_specs"][0]["layer_numbers"], [14])
+        self.assertIn("14", bundle["layers"])
 
     def test_save_transfer_lineplots_writes_expected_figure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

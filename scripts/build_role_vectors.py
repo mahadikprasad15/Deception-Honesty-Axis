@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from deception_honesty_axis.analysis import mean_role_vectors
+from deception_honesty_axis.analysis import infer_activation_layer_numbers, mean_role_vectors
 from deception_honesty_axis.common import ensure_dir, make_run_id, write_json
 from deception_honesty_axis.config import analysis_run_root, corpus_root as resolve_corpus_root, load_config
 from deception_honesty_axis.indexes import load_index
@@ -58,8 +58,18 @@ def main() -> None:
     role_vectors = mean_role_vectors(records)
     if not role_vectors:
         raise RuntimeError("No activation records matched the selected work units.")
+    activation_layer_numbers = infer_activation_layer_numbers(records)
     output_path = run_root / "results" / "role_vectors.pt"
     torch.save(role_vectors, output_path)
+    write_json(
+        run_root / "results" / "role_vectors_meta.json",
+        {
+            "activation_layer_numbers": activation_layer_numbers,
+            "layer_count": len(activation_layer_numbers),
+            "pooling": config.analysis.get("pooling"),
+            "filter_name": config.analysis["filter_name"],
+        },
+    )
     write_json(
         run_root / "results" / "results.json",
         {
@@ -67,6 +77,7 @@ def main() -> None:
                 role: sum(1 for record in records if record["role"] == role)
                 for role in sorted(role_vectors)
             },
+            "activation_layer_numbers": activation_layer_numbers,
             "output_path": str(output_path),
         },
     )

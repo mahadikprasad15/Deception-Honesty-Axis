@@ -42,6 +42,17 @@ def main() -> None:
     import torch
 
     role_vectors = torch.load(vectors_run_dir / "results" / "role_vectors.pt", map_location="cpu")
+    layer_count = int(next(iter(role_vectors.values())).shape[0])
+    role_vectors_meta_path = vectors_run_dir / "results" / "role_vectors_meta.json"
+    if role_vectors_meta_path.exists():
+        activation_layer_numbers = [int(layer) for layer in read_json(role_vectors_meta_path).get("activation_layer_numbers", [])]
+        if len(activation_layer_numbers) != layer_count:
+            raise ValueError(
+                f"role_vectors_meta.json has {len(activation_layer_numbers)} activation layers, "
+                f"but role_vectors.pt has {layer_count}"
+            )
+    else:
+        activation_layer_numbers = list(range(1, layer_count + 1))
     role_manifest = read_json(config.role_manifest_path)
     anchor_role = role_manifest["anchor_role"]
     role_names = [entry["name"] for entry in role_manifest["roles"] if not entry.get("anchor_only", False)]
@@ -56,14 +67,15 @@ def main() -> None:
             "vectors_run_dir": str(vectors_run_dir),
             "role_names": role_names,
             "anchor_role": anchor_role,
+            "activation_layer_numbers": activation_layer_numbers,
         },
     )
     write_stage_status(run_root, "run_pca_analysis", "running", {"role_count": len(role_names)})
 
     per_layer_results: list[dict] = []
-    layer_count = int(next(iter(role_vectors.values())).shape[0])
 
     for layer_idx in range(layer_count):
+        layer_number = activation_layer_numbers[layer_idx]
         layer_role_vectors = {name: vector[layer_idx].to(torch.float32) for name, vector in role_vectors.items()}
         pca = run_centered_pca(layer_role_vectors, role_names)
         components = pca["components"]
@@ -74,6 +86,8 @@ def main() -> None:
         per_layer_results.append(
             {
                 "layer": layer_idx,
+                "layer_number": layer_number,
+                "layer_label": f"L{layer_number}",
                 "explained_variance_ratio": pca["explained_variance_ratio"],
                 "role_projections": {
                     role: pca["projections"][role_offset].tolist()
@@ -84,7 +98,12 @@ def main() -> None:
             }
         )
 
-    results_payload = {"anchor_role": anchor_role, "role_names": role_names, "layers": per_layer_results}
+    results_payload = {
+        "anchor_role": anchor_role,
+        "role_names": role_names,
+        "activation_layer_numbers": activation_layer_numbers,
+        "layers": per_layer_results,
+    }
     save_results_json(run_root / "results" / "results.json", results_payload)
     report_artifacts = write_pca_report_artifacts(run_root, per_layer_results, anchor_role, role_names)
     write_json(run_root / "checkpoints" / "progress.json", {"layers_processed": layer_count, "completed": True})
