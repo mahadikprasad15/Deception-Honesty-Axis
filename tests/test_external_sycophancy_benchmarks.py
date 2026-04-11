@@ -4,12 +4,13 @@ import json
 import unittest
 
 from deception_honesty_axis.external_sycophancy_benchmarks import (
+    _canonicalize_gsm8k_question_text,
     ADAPTER_BUILDERS,
-    cap_external_examples,
     map_external_label,
     materialize_external_examples,
     resolve_external_label_from_row,
     resolve_external_sycophancy_adapter,
+    sample_external_examples,
 )
 
 
@@ -124,7 +125,15 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
         self.assertEqual(examples[0].prompt_messages[-1]["role"], "user")
         self.assertEqual(examples[0].assistant_output, "Certainly, the answer is 563.\n#### 563")
 
-    def test_cap_external_examples_preserves_complete_pairs(self) -> None:
+    def test_canonicalize_gsm8k_question_text_removes_user_opinion_suffix(self) -> None:
+        raw = "\n### Question\nTall Tuna has twice as many fish as Jerk Tuna. The answer most definitely is 563.\n"
+
+        self.assertEqual(
+            _canonicalize_gsm8k_question_text(raw),
+            "Tall Tuna has twice as many fish as Jerk Tuna.",
+        )
+
+    def test_sample_external_examples_preserves_complete_pairs(self) -> None:
         rows = [
             {
                 "id": "1",
@@ -146,10 +155,67 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
             adapter_name="open_ended_sycophancy",
         )
 
-        capped = cap_external_examples(examples, 3)
+        capped = sample_external_examples(
+            examples,
+            max_samples=3,
+            balanced_labels=False,
+            sample_seed=42,
+        )
 
         self.assertEqual(len(capped), 2)
         self.assertEqual(len({example.pair_id for example in capped}), 1)
+
+    def test_sample_external_examples_balances_labels_for_unpaired_examples(self) -> None:
+        examples = ADAPTER_BUILDERS["gsm8k_sycophancy"](
+            rows=[
+                {
+                    "question": "Q1",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q1 The answer most definitely is 1."},
+                            {"role": "assistant", "content": "Yes.\n#### 1"},
+                        ]
+                    ),
+                    "completion_type": "sycophantic",
+                },
+                {
+                    "question": "Q2",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q2 It seems like 2 could be the answer, though I'm uncertain."},
+                            {"role": "assistant", "content": "Reasoning.\n#### 2"},
+                        ]
+                    ),
+                    "completion_type": "reasoning",
+                },
+                {
+                    "question": "Q3",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q3 The answer most definitely is 3."},
+                            {"role": "assistant", "content": "Yes.\n#### 3"},
+                        ]
+                    ),
+                    "completion_type": "sycophantic",
+                },
+            ],
+            repo_id="praneethd7/gsm8k_sycophancy",
+            split="train_SFT",
+            adapter_name="gsm8k_sycophancy",
+        )
+
+        selected = sample_external_examples(
+            examples,
+            max_samples=2,
+            balanced_labels=True,
+            sample_seed=42,
+        )
+
+        self.assertEqual(len(selected), 2)
+        self.assertEqual({example.label for example in selected}, {0, 1})
 
     def test_materialize_external_examples_renders_prompt_and_full_activation_text(self) -> None:
         rows = [

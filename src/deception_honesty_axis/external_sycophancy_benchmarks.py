@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
+import re
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -186,6 +188,29 @@ def _dataset_source_slug(repo_id: str, split: str) -> str:
     return slugify(f"{repo_id.split('/')[-1]}-{split}")
 
 
+def _normalize_question_text(text: str) -> str:
+    normalized = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"^\s*#+\s*question\s*", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+_GSM8K_STANCE_PATTERNS = [
+    r"\s+The answer most definitely is\s+.+$",
+    r"\s+I think the answer is\s+.+$",
+    r"\s+I bet the answer is\s+.+$",
+    r"\s+It seems like\s+.+$",
+]
+
+
+def _canonicalize_gsm8k_question_text(text: str) -> str:
+    normalized = _normalize_question_text(text)
+    for pattern in _GSM8K_STANCE_PATTERNS:
+        normalized = re.sub(pattern, "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
 def _message_list_from_value(value: Any) -> list[dict[str, str]] | None:
     parsed = value
     if isinstance(value, str):
@@ -355,8 +380,13 @@ def _gsm8k_sycophancy_examples(
         source_record_id = _coerce_source_record_id(row, row_index)
         prompt_messages, assistant_output = _split_prompt_messages(_find_message_list(row))
         label_value, label_name = resolve_external_label_from_row(row)
-        question_text = str(row.get("question") or row.get("prompt") or "")
-        pair_seed = question_text or json.dumps(list(prompt_messages), sort_keys=True)
+        user_prompt = ""
+        for message in reversed(prompt_messages):
+            if str(message.get("role")) == "user":
+                user_prompt = str(message.get("content") or "")
+                break
+        question_text = str(row.get("question") or row.get("prompt") or user_prompt)
+        pair_seed = _canonicalize_gsm8k_question_text(question_text) or json.dumps(list(prompt_messages), sort_keys=True)
         examples.append(
             ExternalSycophancyExample(
                 ids=f"{dataset_source}::{source_record_id}",
@@ -404,6 +434,80 @@ def cap_external_examples(
     return capped
 
 
+def sample_external_examples(
+    examples: list[ExternalSycophancyExample],
+    *,
+    max_samples: int | None,
+    balanced_labels: bool,
+    sample_seed: int,
+) -> list[ExternalSycophancyExample]:
+    if max_samples is None and not balanced_labels:
+        return examples
+    if not examples:
+        return examples
+
+    rng = random.Random(int(sample_seed))
+    groups: dict[str, list[ExternalSycophancyExample]] = {}
+    for example in examples:
+        groups.setdefault(example.pair_id, []).append(example)
+
+    paired_groups = [
+        group
+        for group in groups.values()
+        if len(group) == 2 and sorted(example.label for example in group) == [0, 1]
+    ]
+    all_groups_are_balanced_pairs = len(paired_groups) == len(groups)
+    limit = None if max_samples is None else max(0, int(max_samples))
+
+    if all_groups_are_balanced_pairs:
+        rng.shuffle(paired_groups)
+        if limit is None:
+            selected_groups = paired_groups
+        else:
+            pair_limit = limit // 2
+            selected_groups = paired_groups[:pair_limit]
+        selected_examples = [example for group in selected_groups for example in group]
+        if balanced_labels and limit is not None and len(selected_examples) > limit:
+            selected_examples = selected_examples[:limit - (limit % 2)]
+        return sorted(selected_examples, key=lambda example: example.ids)
+
+    shuffled_examples = list(examples)
+    rng.shuffle(shuffled_examples)
+    if balanced_labels:
+        if limit is None:
+            label_counts = {0: 0, 1: 0}
+            selected: list[ExternalSycophancyExample] = []
+            for example in shuffled_examples:
+                label_counts[example.label] += 1
+                selected.append(example)
+            target_per_label = min(label_counts.values()) if label_counts else 0
+            selected = []
+            label_counts = {0: 0, 1: 0}
+            for example in shuffled_examples:
+                if label_counts[example.label] >= target_per_label:
+                    continue
+                label_counts[example.label] += 1
+                selected.append(example)
+            return sorted(selected, key=lambda example: example.ids)
+
+        limit -= limit % 2
+        per_label_limit = max(0, limit // 2)
+        selected: list[ExternalSycophancyExample] = []
+        label_counts = {0: 0, 1: 0}
+        for example in shuffled_examples:
+            if label_counts[example.label] >= per_label_limit:
+                continue
+            label_counts[example.label] += 1
+            selected.append(example)
+            if label_counts[0] >= per_label_limit and label_counts[1] >= per_label_limit:
+                break
+        return sorted(selected, key=lambda example: example.ids)
+
+    if limit is None:
+        return shuffled_examples
+    return sorted(shuffled_examples[:limit], key=lambda example: example.ids)
+
+
 ADAPTER_BUILDERS: dict[str, Callable[..., list[ExternalSycophancyExample]]] = {
     "gsm8k_sycophancy": _gsm8k_sycophancy_examples,
     "ariana_sycophancy": _paired_completion_examples,
@@ -429,6 +533,8 @@ def load_external_sycophancy_examples(
     split: str,
     adapter_name: str | None = None,
     max_samples: int | None = None,
+    balanced_labels: bool = False,
+    sample_seed: int = 42,
 ) -> tuple[list[ExternalSycophancyExample], dict[str, Any]]:
     from datasets import load_dataset
 
@@ -441,7 +547,12 @@ def load_external_sycophancy_examples(
         split=split,
         adapter_name=resolved_adapter,
     )
-    capped_examples = cap_external_examples(examples, max_samples)
+    capped_examples = sample_external_examples(
+        examples,
+        max_samples=max_samples,
+        balanced_labels=balanced_labels,
+        sample_seed=sample_seed,
+    )
     manifest = {
         "source_type": "hf_dataset",
         "repo_id": repo_id,
@@ -451,6 +562,8 @@ def load_external_sycophancy_examples(
         "raw_row_count": len(rows),
         "normalized_record_count": len(examples),
         "max_samples": max_samples,
+        "balanced_labels": bool(balanced_labels),
+        "sample_seed": int(sample_seed),
         "selected_record_count": len(capped_examples),
     }
     return capped_examples, manifest
