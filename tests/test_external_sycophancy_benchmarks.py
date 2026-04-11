@@ -11,6 +11,7 @@ from deception_honesty_axis.external_sycophancy_benchmarks import (
     resolve_external_label_from_row,
     resolve_external_sycophancy_adapter,
     sample_external_examples,
+    summarize_external_examples,
 )
 
 
@@ -216,6 +217,113 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
 
         self.assertEqual(len(selected), 2)
         self.assertEqual({example.label for example in selected}, {0, 1})
+
+    def test_sample_external_examples_prefers_complete_pairs_in_mixed_dataset(self) -> None:
+        paired_examples = ADAPTER_BUILDERS["open_ended_sycophancy"](
+            rows=[
+                {
+                    "id": "paired-row",
+                    "prompt": "Prompt 1",
+                    "sycophantic": "Yes.",
+                    "not_sycophantic": "No.",
+                }
+            ],
+            repo_id="henrypapadatos/Open-ended_sycophancy",
+            split="train",
+            adapter_name="open_ended_sycophancy",
+        )
+        unpaired_examples = ADAPTER_BUILDERS["gsm8k_sycophancy"](
+            rows=[
+                {
+                    "question": "Q1",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q1 The answer most definitely is 1."},
+                            {"role": "assistant", "content": "Yes.\n#### 1"},
+                        ]
+                    ),
+                    "completion_type": "sycophantic",
+                },
+                {
+                    "question": "Q2",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q2 It seems like 2 could be the answer, though I'm uncertain."},
+                            {"role": "assistant", "content": "Reasoning.\n#### 2"},
+                        ]
+                    ),
+                    "completion_type": "reasoning",
+                },
+            ],
+            repo_id="praneethd7/gsm8k_sycophancy",
+            split="train_SFT",
+            adapter_name="gsm8k_sycophancy",
+        )
+
+        selected = sample_external_examples(
+            paired_examples + unpaired_examples,
+            max_samples=2,
+            balanced_labels=True,
+            sample_seed=42,
+        )
+
+        self.assertEqual(len(selected), 2)
+        self.assertEqual(len({example.pair_id for example in selected}), 1)
+        self.assertEqual({example.label for example in selected}, {0, 1})
+
+    def test_summarize_external_examples_reports_pair_structure(self) -> None:
+        paired_examples = ADAPTER_BUILDERS["open_ended_sycophancy"](
+            rows=[
+                {
+                    "id": "paired-row",
+                    "prompt": "Prompt 1",
+                    "sycophantic": "Yes.",
+                    "not_sycophantic": "No.",
+                }
+            ],
+            repo_id="henrypapadatos/Open-ended_sycophancy",
+            split="train",
+            adapter_name="open_ended_sycophancy",
+        )
+        unpaired_examples = ADAPTER_BUILDERS["gsm8k_sycophancy"](
+            rows=[
+                {
+                    "question": "Q1",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q1 The answer most definitely is 1."},
+                            {"role": "assistant", "content": "Yes.\n#### 1"},
+                        ]
+                    ),
+                    "completion_type": "sycophantic",
+                },
+                {
+                    "question": "Q2",
+                    "serialized_chat": json.dumps(
+                        [
+                            {"role": "system", "content": "s"},
+                            {"role": "user", "content": "Q2 It seems like 2 could be the answer, though I'm uncertain."},
+                            {"role": "assistant", "content": "Reasoning.\n#### 2"},
+                        ]
+                    ),
+                    "completion_type": "reasoning",
+                },
+            ],
+            repo_id="praneethd7/gsm8k_sycophancy",
+            split="train_SFT",
+            adapter_name="gsm8k_sycophancy",
+        )
+
+        summary = summarize_external_examples(paired_examples + unpaired_examples)
+
+        self.assertEqual(summary["record_count"], 4)
+        self.assertEqual(summary["unique_pair_count"], 3)
+        self.assertEqual(summary["pair_count_histogram"], {1: 2, 2: 1})
+        self.assertEqual(summary["pair_label_pattern_counts"], {"0": 1, "0,1": 1, "1": 1})
+        self.assertEqual(summary["complete_balanced_pair_count"], 1)
 
     def test_materialize_external_examples_renders_prompt_and_full_activation_text(self) -> None:
         rows = [

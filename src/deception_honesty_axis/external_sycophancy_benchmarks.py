@@ -4,6 +4,7 @@ import hashlib
 import json
 import random
 import re
+from collections import Counter
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -434,6 +435,35 @@ def cap_external_examples(
     return capped
 
 
+def summarize_external_examples(examples: list[ExternalSycophancyExample]) -> dict[str, Any]:
+    pair_groups: dict[str, list[ExternalSycophancyExample]] = {}
+    for example in examples:
+        pair_groups.setdefault(example.pair_id, []).append(example)
+
+    pair_size_histogram = Counter(len(group) for group in pair_groups.values())
+    pair_label_pattern_counts = Counter(
+        ",".join(str(example.label) for example in sorted(group, key=lambda row: (row.label, row.ids)))
+        for group in pair_groups.values()
+    )
+    complete_balanced_pair_count = sum(
+        1
+        for group in pair_groups.values()
+        if len(group) == 2 and sorted(example.label for example in group) == [0, 1]
+    )
+    return {
+        "record_count": len(examples),
+        "unique_pair_count": len(pair_groups),
+        "dataset_source_counts": dict(sorted(Counter(example.dataset_source for example in examples).items())),
+        "label_counts": dict(sorted(Counter(int(example.label) for example in examples).items())),
+        "label_name_counts": dict(sorted(Counter(example.label_name for example in examples).items())),
+        "category_counts": dict(sorted(Counter(example.category for example in examples if example.category).items())),
+        "pair_count_histogram": dict(sorted(pair_size_histogram.items())),
+        "pair_label_pattern_counts": dict(sorted(pair_label_pattern_counts.items())),
+        "complete_balanced_pair_count": int(complete_balanced_pair_count),
+        "complete_balanced_pair_record_count": int(complete_balanced_pair_count * 2),
+    }
+
+
 def sample_external_examples(
     examples: list[ExternalSycophancyExample],
     *,
@@ -456,10 +486,9 @@ def sample_external_examples(
         for group in groups.values()
         if len(group) == 2 and sorted(example.label for example in group) == [0, 1]
     ]
-    all_groups_are_balanced_pairs = len(paired_groups) == len(groups)
     limit = None if max_samples is None else max(0, int(max_samples))
 
-    if all_groups_are_balanced_pairs:
+    if len(paired_groups) == len(groups):
         rng.shuffle(paired_groups)
         if limit is None:
             selected_groups = paired_groups
@@ -473,6 +502,31 @@ def sample_external_examples(
 
     shuffled_examples = list(examples)
     rng.shuffle(shuffled_examples)
+    if balanced_labels and paired_groups and limit is not None:
+        pair_groups = list(paired_groups)
+        rng.shuffle(pair_groups)
+        pair_limit = limit // 2
+        selected_from_pairs = pair_groups[:pair_limit]
+        selected_examples = [example for group in selected_from_pairs for example in group]
+        selected_ids = {example.ids for example in selected_examples}
+        remaining_slots = limit - len(selected_examples)
+        if remaining_slots <= 0:
+            return sorted(selected_examples, key=lambda example: example.ids)
+
+        per_label_limit = remaining_slots // 2
+        supplemental_counts = {0: 0, 1: 0}
+        supplemental: list[ExternalSycophancyExample] = []
+        for example in shuffled_examples:
+            if example.ids in selected_ids:
+                continue
+            if supplemental_counts[example.label] >= per_label_limit:
+                continue
+            supplemental_counts[example.label] += 1
+            supplemental.append(example)
+            if supplemental_counts[0] >= per_label_limit and supplemental_counts[1] >= per_label_limit:
+                break
+        return sorted(selected_examples + supplemental, key=lambda example: example.ids)
+
     if balanced_labels:
         if limit is None:
             label_counts = {0: 0, 1: 0}
