@@ -130,7 +130,17 @@ def compact_axis_label(relative_parts: tuple[str, ...], selection: dict[str, Any
     variant = relative_parts[2] if len(relative_parts) > 2 else "unknown"
     method = str(selection.get("method") or "unknown")
     objective = str(selection.get("objective") or "unknown")
-    probe = "contrast" if "contrast" in method else "pc1" if "pc1" in method else method
+    lowered = method.lower()
+    if "contrast" in lowered:
+        probe = "contrast"
+    elif "pc1" in lowered:
+        probe = "pc1"
+    elif "pc2" in lowered:
+        probe = "pc2"
+    elif "pc3" in lowered:
+        probe = "pc3"
+    else:
+        probe = method
     objective_label = "thr" if "threshold" in objective else "mean"
     return f"{variant} | {probe} | {objective_label}"
 

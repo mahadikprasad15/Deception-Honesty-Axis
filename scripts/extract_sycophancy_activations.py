@@ -11,12 +11,14 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from deception_honesty_axis.common import append_jsonl, ensure_dir, load_jsonl, make_run_id, sha256_file, slugify, write_json
+from deception_honesty_axis.common import append_jsonl, ensure_dir, load_jsonl, make_run_id, sha256_file, slugify, write_json, write_jsonl
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 from deception_honesty_axis.sycophancy_activations import (
     DEFAULT_SOURCE_FILES,
     DEFAULT_SOURCE_REPO_ID,
     SycophancyActivationDataset,
+    normalize_activation_pooling,
+    pool_hidden_states,
 )
 
 
@@ -27,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model_name", default="meta-llama/Llama-3.2-3B-Instruct", help="HF model id to load.")
     parser.add_argument("--batch_size", type=int, default=8, help="Forward-pass batch size.")
     parser.add_argument("--layer", type=int, default=14, help="1-based transformer layer to hook.")
+    parser.add_argument(
+        "--pooling",
+        default="mean_response",
+        choices=["mean_response", "last_token"],
+        help="How to pool the hooked token states into one activation vector per sample.",
+    )
     parser.add_argument("--dtype", default="float16", choices=["float16", "bfloat16", "float32"], help="Model dtype.")
     parser.add_argument("--device", default="auto", help="Use 'auto' for device_map=auto, or an explicit device like cuda:0/cpu.")
     parser.add_argument("--max_length", type=int, default=None, help="Optional tokenizer truncation length.")
@@ -89,9 +97,10 @@ def extract_batch_activations(
     model,
     records: list[Any],
     layer_number: int,
+    pooling: str,
     add_special_tokens: bool,
     max_length: int | None,
-) -> list[list[float]]:
+) -> list[dict[str, Any]]:
     layers = resolve_transformer_layers(model)
     if layer_number < 1 or layer_number > len(layers):
         raise ValueError(f"Layer {layer_number} is out of range for model with {len(layers)} layers")
@@ -111,6 +120,17 @@ def extract_batch_activations(
             max_length=max_length,
             add_special_tokens=add_special_tokens,
         )
+        prompt_encoded = tokenizer(
+            [record.prompt_text for record in records],
+            return_tensors="pt",
+            padding=True,
+            add_special_tokens=add_special_tokens,
+        )
+        if "attention_mask" not in encoded:
+            encoded["attention_mask"] = torch.ones_like(encoded["input_ids"])
+        if "attention_mask" not in prompt_encoded:
+            prompt_encoded["attention_mask"] = torch.ones_like(prompt_encoded["input_ids"])
+        prompt_token_counts = [int(value) for value in prompt_encoded["attention_mask"].sum(dim=1).tolist()]
         model_device = next(model.parameters()).device
         encoded = {key: value.to(model_device) for key, value in encoded.items()}
         with torch.no_grad():
@@ -118,11 +138,22 @@ def extract_batch_activations(
     finally:
         handle.remove()
 
-    hidden = captured["hidden"]
-    last_positions = encoded["attention_mask"].sum(dim=1) - 1
-    batch_indices = torch.arange(hidden.shape[0], device=hidden.device)
-    activations = hidden[batch_indices, last_positions].to(dtype=torch.float32, device="cpu")
-    return [[float(value) for value in row.tolist()] for row in activations]
+    pooled, pooling_metadata = pool_hidden_states(
+        captured["hidden"],
+        encoded["attention_mask"],
+        prompt_token_counts,
+        pooling,
+    )
+    activations = pooled.to(dtype=torch.float32, device="cpu")
+    return [
+        {
+            "activation": [float(value) for value in activation.tolist()],
+            "prompt_token_count": int(metadata.prompt_token_count),
+            "response_token_count": int(metadata.response_token_count),
+            "used_last_token_fallback": bool(metadata.used_last_token_fallback),
+        }
+        for activation, metadata in zip(activations, pooling_metadata, strict=True)
+    ]
 
 
 def local_or_hub_dataset(args: argparse.Namespace, run_root: Path) -> tuple[SycophancyActivationDataset, dict[str, str]]:
@@ -163,6 +194,11 @@ def save_hf_dataset(records: list[dict[str, Any]], run_root: Path, push_repo_id:
             "user_framing": Value("string"),
             "system_nudge_direction": Value("string"),
             "activation": Sequence(Value("float32")),
+            "activation_pooling": Value("string"),
+            "activation_layer_number": Value("int64"),
+            "prompt_token_count": Value("int64"),
+            "response_token_count": Value("int64"),
+            "used_last_token_fallback": Value("bool"),
             "label": Value("int64"),
         }
     )
@@ -171,6 +207,36 @@ def save_hf_dataset(records: list[dict[str, Any]], run_root: Path, push_repo_id:
     dataset.save_to_disk(str(dataset_dir))
     if push_repo_id:
         dataset.push_to_hub(push_repo_id, private=private, token=os.environ.get("HF_TOKEN"))
+
+
+def _normalize_record_field_int(value: Any, default: int) -> int:
+    if value in (None, ""):
+        return int(default)
+    return int(value)
+
+
+def normalize_saved_records(rows: list[dict[str, Any]], *, layer_number: int, pooling: str) -> list[dict[str, Any]]:
+    normalized_pooling = normalize_activation_pooling(pooling) or "mean_response"
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for row in rows:
+        sample_id = str(row.get("ids", ""))
+        if sample_id in seen_ids:
+            continue
+        seen_ids.add(sample_id)
+        payload = dict(row)
+        payload["activation_pooling"] = str(
+            normalize_activation_pooling(payload.get("activation_pooling")) or normalized_pooling
+        )
+        payload["activation_layer_number"] = _normalize_record_field_int(
+            payload.get("activation_layer_number"),
+            layer_number,
+        )
+        payload["prompt_token_count"] = _normalize_record_field_int(payload.get("prompt_token_count"), 0)
+        payload["response_token_count"] = _normalize_record_field_int(payload.get("response_token_count"), 0)
+        payload["used_last_token_fallback"] = bool(payload.get("used_last_token_fallback", False))
+        normalized.append(payload)
+    return normalized
 
 
 def main() -> None:
@@ -186,10 +252,10 @@ def main() -> None:
             "run_id": run_id,
             "model_name": args.model_name,
             "layer": args.layer,
+            "activation_pooling": args.pooling,
             "batch_size": args.batch_size,
             "source_repo_id": args.source_repo_id,
             "push_to_hub_repo_id": args.push_to_hub_repo_id,
-            "activation_position": "last_non_pad_token",
             "add_special_tokens": bool(args.add_special_tokens),
         },
     )
@@ -259,13 +325,19 @@ def main() -> None:
             model=model,
             records=batch,
             layer_number=args.layer,
+            pooling=args.pooling,
             add_special_tokens=bool(args.add_special_tokens),
             max_length=args.max_length,
         )
         output_records = []
-        for record, activation in zip(batch, activations, strict=True):
+        for record, activation_payload in zip(batch, activations, strict=True):
             payload = record.output_without_activation()
-            payload["activation"] = activation
+            payload["activation"] = activation_payload["activation"]
+            payload["activation_pooling"] = normalize_activation_pooling(args.pooling) or args.pooling
+            payload["activation_layer_number"] = int(args.layer)
+            payload["prompt_token_count"] = int(activation_payload["prompt_token_count"])
+            payload["response_token_count"] = int(activation_payload["response_token_count"])
+            payload["used_last_token_fallback"] = bool(activation_payload["used_last_token_fallback"])
             output_records.append(payload)
         append_jsonl(records_path, output_records)
         completed_this_run += len(output_records)
@@ -283,7 +355,12 @@ def main() -> None:
                 },
             )
 
-    final_records = load_jsonl(records_path)
+    final_records = normalize_saved_records(
+        load_jsonl(records_path),
+        layer_number=args.layer,
+        pooling=args.pooling,
+    )
+    write_jsonl(records_path, final_records)
     pair_counts = Counter(record["pair_id"] for record in final_records)
     label_counts = Counter(int(record["label"]) for record in final_records)
     source_counts = Counter(record["dataset_source"] for record in final_records)
@@ -294,6 +371,9 @@ def main() -> None:
             "label_counts": dict(sorted(label_counts.items())),
             "dataset_source_counts": dict(sorted(source_counts.items())),
             "pair_count_histogram": dict(sorted(Counter(pair_counts.values()).items())),
+            "activation_pooling": normalize_activation_pooling(args.pooling),
+            "activation_layer_number": int(args.layer),
+            "fallback_row_count": int(sum(bool(record["used_last_token_fallback"]) for record in final_records)),
             "records_path": str(records_path),
         },
     )
@@ -312,7 +392,13 @@ def main() -> None:
         run_root,
         "extract_sycophancy_activations",
         "completed",
-        {"run_id": run_id, "record_count": len(final_records), "pushed_to_hub": bool(args.push_to_hub_repo_id)},
+        {
+            "run_id": run_id,
+            "record_count": len(final_records),
+            "activation_pooling": normalize_activation_pooling(args.pooling),
+            "activation_layer_number": int(args.layer),
+            "pushed_to_hub": bool(args.push_to_hub_repo_id),
+        },
     )
     print(f"[sycophancy-activations] completed run_id={run_id} root={run_root}")
 

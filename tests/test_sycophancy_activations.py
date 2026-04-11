@@ -5,10 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import torch
+
 from deception_honesty_axis.sycophancy_activations import (
     SycophancyActivationDataset,
     build_activation_text,
     derive_sycophancy_metadata,
+    normalize_activation_pooling,
+    pool_hidden_states,
     remap_scale_label,
 )
 
@@ -181,6 +185,42 @@ class SycophancyActivationsTest(unittest.TestCase):
 
             self.assertEqual(len(dataset), 3)
             self.assertEqual([dataset[index].dataset_source for index in range(3)], ["factual", "evaluative", "aesthetic"])
+
+    def test_pool_hidden_states_mean_response_uses_response_slice(self) -> None:
+        hidden_states = torch.tensor(
+            [
+                [[1.0, 1.0], [2.0, 2.0], [10.0, 10.0], [14.0, 14.0]],
+                [[3.0, 3.0], [6.0, 6.0], [9.0, 9.0], [12.0, 12.0]],
+            ],
+            dtype=torch.float32,
+        )
+        attention_mask = torch.tensor([[1, 1, 1, 1], [1, 1, 1, 0]], dtype=torch.int64)
+
+        pooled, metadata = pool_hidden_states(hidden_states, attention_mask, [2, 1], "mean_response")
+
+        self.assertTrue(torch.allclose(pooled[0], torch.tensor([12.0, 12.0])))
+        self.assertTrue(torch.allclose(pooled[1], torch.tensor([7.5, 7.5])))
+        self.assertEqual(metadata[0].prompt_token_count, 2)
+        self.assertEqual(metadata[0].response_token_count, 2)
+        self.assertFalse(metadata[0].used_last_token_fallback)
+        self.assertEqual(metadata[1].response_token_count, 2)
+
+    def test_pool_hidden_states_last_token_uses_final_non_pad_token(self) -> None:
+        hidden_states = torch.tensor(
+            [[[1.0, 1.0], [2.0, 2.0], [5.0, 7.0]]],
+            dtype=torch.float32,
+        )
+        attention_mask = torch.tensor([[1, 1, 1]], dtype=torch.int64)
+
+        pooled, metadata = pool_hidden_states(hidden_states, attention_mask, [2], "last_non_pad_token")
+
+        self.assertTrue(torch.allclose(pooled[0], torch.tensor([5.0, 7.0])))
+        self.assertEqual(metadata[0].response_token_count, 1)
+        self.assertFalse(metadata[0].used_last_token_fallback)
+
+    def test_normalize_activation_pooling_maps_legacy_names(self) -> None:
+        self.assertEqual(normalize_activation_pooling("response_mean"), "mean_response")
+        self.assertEqual(normalize_activation_pooling("last_non_pad_token"), "last_token")
 
 
 if __name__ == "__main__":

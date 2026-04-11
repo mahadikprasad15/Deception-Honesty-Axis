@@ -157,8 +157,21 @@ def axis_id_for_run(relative_parts: tuple[str, ...]) -> str:
     return slugify("__".join(relative_parts))
 
 
+def probe_family_for_method(method: str) -> str:
+    lowered = method.lower()
+    if "contrast" in lowered:
+        return "contrast"
+    if "pc1" in lowered:
+        return "pc1"
+    if "pc2" in lowered:
+        return "pc2"
+    if "pc3" in lowered:
+        return "pc3"
+    return method
+
+
 def compact_axis_label(variant: str, method: str, objective: str | None) -> str:
-    probe = "contrast" if "contrast" in method else "pc1" if "pc1" in method else method
+    probe = probe_family_for_method(method)
     objective_label = "thr" if (objective and "threshold" in objective) else "mean"
     return f"{variant} | {probe} | {objective_label}"
 
@@ -432,7 +445,7 @@ def normalize_run(
         "track_name": track_name,
         "run_name": run_name,
         "method": method,
-        "probe_family": "contrast" if "contrast" in method else "pc1" if "pc1" in method else method,
+        "probe_family": probe_family_for_method(method),
         "layer_spec": final_selection.get("layer_spec"),
         "objective": final_selection.get("objective") or "mean",
         "objective_label": objective_label,
@@ -907,9 +920,10 @@ def build_lineage_tables(
     comparison_rows: list[dict[str, Any]] = []
     dataset_delta_rows: list[dict[str, Any]] = []
     item_story_rows: list[dict[str, Any]] = []
+    probe_families = sorted({str(row["probe_family"]) for row in search_runs})
 
     for parent_variant, child_variant in LINEAGE_EDGES:
-        for probe_family in ("contrast", "pc1"):
+        for probe_family in probe_families:
             for objective_label in ("mean", "thr"):
                 parent_run = runs_by_key.get((parent_variant, probe_family, objective_label))
                 child_run = runs_by_key.get((child_variant, probe_family, objective_label))

@@ -4,21 +4,29 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from deception_honesty_axis.common import make_run_id, read_json, utc_now_iso, write_json
+from deception_honesty_axis.activation_row_targets import (
+    ensure_pooling_compatibility,
+    ensure_single_layer_compatibility,
+    grouped_indices,
+    load_activation_rows,
+    validate_and_stack_activation_rows,
+)
+from deception_honesty_axis.common import make_run_id, read_json, slugify, utc_now_iso, write_json
 from deception_honesty_axis.analysis import infer_activation_layer_numbers
 from deception_honesty_axis.config import corpus_root as resolve_corpus_root, load_config
 from deception_honesty_axis.indexes import load_index
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 from deception_honesty_axis.records import load_activation_records
 from deception_honesty_axis.role_axis_transfer import (
+    CachedSplitFeatures,
     DATASET_LABELS,
+    ZERO_SHOT_METHODS,
     build_role_axis_bundle,
     evaluate_zero_shot,
     load_completion_mean_split,
@@ -26,10 +34,22 @@ from deception_honesty_axis.role_axis_transfer import (
     scores_for_layer,
 )
 from deception_honesty_axis.transfer_config import load_transfer_config
-from deception_honesty_axis.work_units import load_questions, select_first_n, build_work_units
+from deception_honesty_axis.work_units import build_work_units, load_questions, select_first_n
 
 
-SUPPORTED_FIXED_METHODS = {"contrast_zero_shot", "pc1_zero_shot"}
+SUPPORTED_FIXED_METHODS = set(ZERO_SHOT_METHODS)
+ZERO_SHOT_METHOD_COMPONENT_INDEX = {
+    "contrast_zero_shot": None,
+    "pc1_zero_shot": 0,
+    "pc2_zero_shot": 1,
+    "pc3_zero_shot": 2,
+}
+ACTIVATION_TARGET_LABELS = {
+    "all": "All",
+    "factual": "Factual",
+    "evaluative": "Evaluative",
+    "aesthetic": "Aesthetic",
+}
 DEFAULT_DATASET_ORDER = [
     "Deception-AILiar-completion",
     "Deception-ConvincingGame-completion",
@@ -75,6 +95,38 @@ def parse_args() -> argparse.Namespace:
         help="Optional override to evaluate only selected target datasets. Can be passed multiple times.",
     )
     parser.add_argument(
+        "--activation-dataset-repo-id",
+        default=None,
+        help="Optional HF Dataset repo with cached 1D activation rows. If set, uses activation-row targets instead of completion splits.",
+    )
+    parser.add_argument(
+        "--activation-dataset-dir",
+        type=Path,
+        default=None,
+        help="Optional local datasets.save_to_disk directory for cached activation rows.",
+    )
+    parser.add_argument(
+        "--activation-jsonl",
+        type=Path,
+        default=None,
+        help="Optional local records.jsonl for cached activation rows.",
+    )
+    parser.add_argument(
+        "--activation-split",
+        default="train",
+        help="HF split to load when using --activation-dataset-repo-id.",
+    )
+    parser.add_argument(
+        "--activation-group-field",
+        default="dataset_source",
+        help="Activation-row field used to define evaluation groups. 'all' is always added automatically.",
+    )
+    parser.add_argument(
+        "--target-slug",
+        default=None,
+        help="Optional suffix used to distinguish non-default evaluation targets in the run path.",
+    )
+    parser.add_argument(
         "--objective",
         type=str,
         default="mean_delta_first",
@@ -112,8 +164,36 @@ def objective_slug(objective: str, threshold: float) -> str:
     return "mean-delta-first"
 
 
-def fixed_track_run_root(experiment_config, method: str, layer_spec: str, run_id: str, objective: str, threshold: float) -> Path:  # noqa: ANN001
+def has_activation_row_source(args: argparse.Namespace) -> bool:
+    return bool(args.activation_dataset_repo_id or args.activation_dataset_dir or args.activation_jsonl)
+
+
+def evaluation_target_slug(args: argparse.Namespace) -> str:
+    if args.target_slug:
+        return slugify(args.target_slug)
+    if not has_activation_row_source(args):
+        return "transfer"
+    source_token = args.activation_dataset_repo_id
+    if not source_token and args.activation_dataset_dir:
+        source_token = args.activation_dataset_dir.resolve().name
+    if not source_token and args.activation_jsonl:
+        source_token = args.activation_jsonl.resolve().stem
+    source_token = source_token or "activation-rows"
+    return slugify(f"activation-rows-{args.activation_group_field}-{source_token}")
+
+
+def fixed_track_run_root(
+    experiment_config,
+    method: str,
+    layer_spec: str,
+    run_id: str,
+    objective: str,
+    threshold: float,
+    target_slug: str,
+) -> Path:  # noqa: ANN001
     track_slug = f"{method}__layer-{layer_spec}__objective-{objective_slug(objective, threshold)}"
+    if target_slug != "transfer":
+        track_slug = f"{track_slug}__target-{target_slug}"
     root = (
         experiment_config.artifact_root
         / "runs"
@@ -126,6 +206,14 @@ def fixed_track_run_root(experiment_config, method: str, layer_spec: str, run_id
     )
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def axis_expected_pooling(experiment_config) -> str | None:  # noqa: ANN001
+    return str(experiment_config.analysis.get("pooling") or "")
+
+
+def target_dataset_label(dataset_name: str) -> str:
+    return ACTIVATION_TARGET_LABELS.get(dataset_name, DATASET_LABELS.get(dataset_name, dataset_name))
 
 
 def score_tuple(score: dict[str, float | int], objective: str) -> tuple[float | int, ...]:
@@ -207,6 +295,9 @@ def save_selected_probe_snapshot(
     threshold: float,
     role_manifest_path: Path,
     question_file_path: Path,
+    *,
+    target_manifest: dict[str, Any],
+    target_slug: str,
 ) -> None:
     payload = json.loads(json.dumps(transfer_config.raw))
     payload["role_axis"]["experiment_config"] = str(experiment_config.path)
@@ -218,6 +309,10 @@ def save_selected_probe_snapshot(
     payload["selected_inputs"] = {
         "role_manifest_file": str(role_manifest_path),
         "question_file": str(question_file_path),
+    }
+    payload["selected_evaluation_target"] = {
+        "target_slug": target_slug,
+        **target_manifest,
     }
     write_json(path, payload)
 
@@ -319,6 +414,76 @@ def plot_trajectory(path: Path, history_rows: list[dict[str, Any]], objective: s
     plt.close(fig)
 
 
+def load_search_targets(
+    args: argparse.Namespace,
+    transfer_config,  # noqa: ANN001
+    experiment_config,  # noqa: ANN001
+    resolved_spec,  # noqa: ANN001
+) -> tuple[dict[str, CachedSplitFeatures], list[str], dict[str, Any]]:
+    if not has_activation_row_source(args):
+        target_datasets = args.target_dataset or transfer_config.target_datasets
+        split_cache: dict[str, CachedSplitFeatures] = {}
+        for dataset_name in target_datasets:
+            split_dir = transfer_config.target_activations_root / dataset_name / transfer_config.eval_split
+            print(f"[fixed-track-search] loading target split {dataset_name} from {split_dir}")
+            split_cache[dataset_name] = load_completion_mean_split(split_dir, [resolved_spec])
+        return split_cache, target_datasets, {
+            "backend": "completion_split",
+            "target_datasets": target_datasets,
+            "target_activations_root": str(transfer_config.target_activations_root),
+            "eval_split": transfer_config.eval_split,
+        }
+
+    rows, source_manifest = load_activation_rows(
+        activation_dataset_repo_id=args.activation_dataset_repo_id,
+        activation_dataset_dir=args.activation_dataset_dir,
+        activation_jsonl=args.activation_jsonl,
+        split=args.activation_split,
+    )
+    stacked = validate_and_stack_activation_rows(
+        rows,
+        group_field=args.activation_group_field,
+        source_manifest=source_manifest,
+    )
+    ensure_pooling_compatibility(
+        activation_pooling=stacked.activation_pooling,
+        expected_pooling=axis_expected_pooling(experiment_config),
+        context="Activation-row search target",
+    )
+    ensure_single_layer_compatibility(
+        activation_layer_number=stacked.activation_layer_number,
+        expected_layer_numbers=resolved_spec.layer_numbers,
+        context="Activation-row search target",
+    )
+    group_index = grouped_indices(stacked.group_values)
+    target_datasets = args.target_dataset or list(group_index.keys())
+    missing_datasets = [dataset_name for dataset_name in target_datasets if dataset_name not in group_index]
+    if missing_datasets:
+        raise ValueError(
+            f"Requested activation-row groups are unavailable: {missing_datasets}; "
+            f"available={list(group_index.keys())}"
+        )
+
+    split_cache = {}
+    for dataset_name in target_datasets:
+        indices = group_index[dataset_name]
+        split_cache[dataset_name] = CachedSplitFeatures(
+            dataset=dataset_name,
+            split="all",
+            sample_ids=[stacked.sample_ids[index] for index in indices.tolist()],
+            labels=stacked.labels[indices],
+            features_by_spec={resolved_spec.key: stacked.features[indices]},
+        )
+    return split_cache, target_datasets, {
+        "backend": "activation_rows",
+        "group_field": args.activation_group_field,
+        "target_datasets": target_datasets,
+        "activation_source": source_manifest,
+        "activation_pooling": stacked.activation_pooling,
+        "activation_layer_number": stacked.activation_layer_number,
+    }
+
+
 def main() -> None:
     args = parse_args()
     experiment_config = load_config(args.experiment_config.resolve())
@@ -329,7 +494,16 @@ def main() -> None:
         raise ValueError(f"Requested layer {args.layer_spec} is not present in {transfer_config.path}")
 
     run_id = args.run_id or make_run_id()
-    run_root = fixed_track_run_root(experiment_config, args.method, args.layer_spec, run_id, args.objective, args.threshold)
+    target_slug = evaluation_target_slug(args)
+    run_root = fixed_track_run_root(
+        experiment_config,
+        args.method,
+        args.layer_spec,
+        run_id,
+        args.objective,
+        args.threshold,
+        target_slug,
+    )
     checkpoints_dir = run_root / "checkpoints"
     results_dir = run_root / "results"
     plots_dir = run_root / "plots"
@@ -385,13 +559,12 @@ def main() -> None:
     example_tensor = next(iter(role_question_sum.values()))
     activation_layer_numbers = infer_activation_layer_numbers(records)
     resolved_spec = resolve_layer_specs(int(example_tensor.shape[0]), [args.layer_spec], activation_layer_numbers)[0]
-    target_datasets = args.target_dataset or transfer_config.target_datasets
-
-    split_cache: dict[str, Any] = {}
-    for dataset_name in target_datasets:
-        split_dir = transfer_config.target_activations_root / dataset_name / transfer_config.eval_split
-        print(f"[fixed-track-search] loading target split {dataset_name} from {split_dir}")
-        split_cache[dataset_name] = load_completion_mean_split(split_dir, [resolved_spec])
+    split_cache, target_datasets, target_manifest = load_search_targets(
+        args,
+        transfer_config,
+        experiment_config,
+        resolved_spec,
+    )
 
     honest_pool = list(transfer_config.honest_roles)
     deceptive_pool = list(transfer_config.deceptive_roles)
@@ -443,16 +616,22 @@ def main() -> None:
             split_payload = split_cache[dataset_name]
             features = split_payload.features_by_spec[resolved_spec.key]
             score_payload = scores_for_layer(features, layer_bundle)
+            component_index = ZERO_SHOT_METHOD_COMPONENT_INDEX[args.method]
+            if component_index is not None and score_payload["pc_scores"].shape[1] <= component_index:
+                raise RuntimeError(
+                    f"Method {args.method} requires PC{component_index + 1}, "
+                    f"but only {score_payload['pc_scores'].shape[1]} PC dimensions are available"
+                )
             honest_like_scores = (
                 score_payload["contrast"]
-                if args.method == "contrast_zero_shot"
-                else score_payload["pc_scores"][:, 0]
+                if component_index is None
+                else score_payload["pc_scores"][:, component_index]
             )
             metrics, deceptive_scores, probabilities = evaluate_zero_shot(split_payload.labels, honest_like_scores)
             per_dataset.append(
                 {
                     "dataset": dataset_name,
-                    "dataset_label": DATASET_LABELS.get(dataset_name, dataset_name),
+                    "dataset_label": target_dataset_label(dataset_name),
                     "layer_spec": resolved_spec.key,
                     "method": args.method,
                     "auroc": float(metrics["auroc"]),
@@ -546,6 +725,8 @@ def main() -> None:
             "layer_spec": resolved_spec.key,
             "objective": args.objective,
             "threshold": args.threshold,
+            "target_slug": target_slug,
+            "target_manifest": target_manifest,
             "target_datasets": target_datasets,
             "honest_pool": honest_pool,
             "deceptive_pool": deceptive_pool,
@@ -762,6 +943,8 @@ def main() -> None:
             "layer_spec": resolved_spec.key,
             "objective": args.objective,
             "threshold": args.threshold,
+            "target_slug": target_slug,
+            "evaluation_target": target_manifest,
             "honest_roles": current_honest,
             "deceptive_roles": current_deceptive,
             "question_ids": current_questions,
@@ -814,6 +997,8 @@ def main() -> None:
         args.threshold,
         selected_manifest_path,
         selected_questions_path,
+        target_manifest=target_manifest,
+        target_slug=target_slug,
     )
 
     final_plot_rows = [

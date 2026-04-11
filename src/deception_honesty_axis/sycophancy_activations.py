@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import torch
 from torch.utils.data import Dataset
@@ -26,6 +26,7 @@ class SycophancyRecord:
     dataset_source: str
     user_framing: str
     system_nudge_direction: str
+    prompt_text: str
     activation_text: str
     label: int
 
@@ -38,6 +39,13 @@ class SycophancyRecord:
             "system_nudge_direction": self.system_nudge_direction,
             "label": self.label,
         }
+
+
+@dataclass(frozen=True)
+class ActivationPoolingMetadata:
+    prompt_token_count: int
+    response_token_count: int
+    used_last_token_fallback: bool
 
 
 def load_jsonl_records(path: Path) -> list[dict[str, Any]]:
@@ -84,6 +92,73 @@ def remap_scale_label(value: Any) -> int:
     if label == 10:
         return 0
     raise ValueError(f"Unsupported scale_labels value {value!r}; expected 1 or 10")
+
+
+def normalize_activation_pooling(value: str | None) -> str | None:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if not text:
+        return None
+    if text in {"response_mean", "mean_response"}:
+        return "mean_response"
+    if text in {"last_non_pad_token", "last_non_pad", "last_token"}:
+        return "last_token"
+    return text
+
+
+def pool_hidden_states(
+    hidden_states: torch.Tensor,
+    attention_mask: torch.Tensor,
+    prompt_token_counts: Sequence[int],
+    pooling: str,
+) -> tuple[torch.Tensor, list[ActivationPoolingMetadata]]:
+    normalized_pooling = normalize_activation_pooling(pooling)
+    if normalized_pooling not in {"mean_response", "last_token"}:
+        raise ValueError(f"Unsupported activation pooling {pooling!r}")
+    if hidden_states.ndim != 3:
+        raise ValueError(f"Expected hidden_states shape (B,T,D), got {tuple(hidden_states.shape)}")
+    if attention_mask.shape[:2] != hidden_states.shape[:2]:
+        raise ValueError(
+            "attention_mask must match hidden_states batch/time dimensions: "
+            f"mask={tuple(attention_mask.shape)} hidden={tuple(hidden_states.shape)}"
+        )
+    if len(prompt_token_counts) != int(hidden_states.shape[0]):
+        raise ValueError(
+            "prompt_token_counts length must equal batch size: "
+            f"{len(prompt_token_counts)} != {int(hidden_states.shape[0])}"
+        )
+
+    pooled_rows: list[torch.Tensor] = []
+    metadata_rows: list[ActivationPoolingMetadata] = []
+    non_pad_counts = attention_mask.sum(dim=1).to(dtype=torch.int64)
+    for batch_index in range(int(hidden_states.shape[0])):
+        total_tokens = int(non_pad_counts[batch_index].item())
+        if total_tokens <= 0:
+            raise ValueError(f"Encountered empty sequence at batch index {batch_index}")
+        prompt_token_count = max(0, min(int(prompt_token_counts[batch_index]), total_tokens))
+        response_token_count = max(0, total_tokens - prompt_token_count)
+        token_slice = hidden_states[batch_index, :total_tokens, :]
+
+        if normalized_pooling == "mean_response" and response_token_count > 0:
+            pooled_rows.append(token_slice[prompt_token_count:total_tokens, :].mean(dim=0))
+            metadata_rows.append(
+                ActivationPoolingMetadata(
+                    prompt_token_count=prompt_token_count,
+                    response_token_count=response_token_count,
+                    used_last_token_fallback=False,
+                )
+            )
+            continue
+
+        pooled_rows.append(token_slice[total_tokens - 1, :])
+        metadata_rows.append(
+            ActivationPoolingMetadata(
+                prompt_token_count=prompt_token_count,
+                response_token_count=response_token_count,
+                used_last_token_fallback=normalized_pooling == "mean_response" and response_token_count == 0,
+            )
+        )
+
+    return torch.stack(pooled_rows, dim=0), metadata_rows
 
 
 def build_activation_text(record: dict[str, Any]) -> str:
@@ -201,6 +276,9 @@ def prepare_sycophancy_record(record: dict[str, Any], dataset_source: str) -> Sy
         raise ValueError("Record is missing ids")
     if "scale_labels" not in record:
         raise ValueError(f"Record {record_id} is missing scale_labels")
+    prompt_text = str(record.get("input_formatted") or "")
+    if not prompt_text:
+        raise ValueError(f"Record {record_id} is missing input_formatted")
     metadata = derive_sycophancy_metadata(record, dataset_source)
     return SycophancyRecord(
         ids=str(record_id),
@@ -208,6 +286,7 @@ def prepare_sycophancy_record(record: dict[str, Any], dataset_source: str) -> Sy
         dataset_source=dataset_source,
         user_framing=str(metadata["user_framing"]),
         system_nudge_direction=str(metadata["system_nudge_direction"]),
+        prompt_text=prompt_text,
         activation_text=build_activation_text(record),
         label=remap_scale_label(record["scale_labels"]),
     )

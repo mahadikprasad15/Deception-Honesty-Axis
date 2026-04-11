@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import argparse
-import os
 from collections import Counter
 from pathlib import Path
-from typing import Any
 
-import numpy as np
-
-from deception_honesty_axis.common import append_jsonl, ensure_dir, load_jsonl, make_run_id, slugify, write_json
+from deception_honesty_axis.activation_row_targets import (
+    ensure_pooling_compatibility,
+    ensure_single_layer_compatibility,
+    grouped_indices,
+    load_activation_rows,
+    validate_and_stack_activation_rows,
+)
+from deception_honesty_axis.common import ensure_dir, make_run_id, read_json, slugify, write_json
+from deception_honesty_axis.config import load_config
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 from deception_honesty_axis.role_axis_transfer import (
     ZERO_SHOT_METHODS,
@@ -60,6 +64,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--activation-dataset-dir", type=Path, default=None, help="Local datasets.save_to_disk directory.")
     parser.add_argument("--activation-jsonl", type=Path, default=None, help="Local records.jsonl from extraction run.")
     parser.add_argument("--split", default="train", help="HF Dataset split to load when using --activation-dataset-repo-id.")
+    parser.add_argument(
+        "--group-field",
+        default="dataset_source",
+        help="Activation-row field used to define evaluation groups. 'all' is always added automatically.",
+    )
     parser.add_argument("--artifact-root", type=Path, default=Path("artifacts"), help="Repo artifact root.")
     parser.add_argument("--model-name", default="meta-llama/Llama-3.2-3B-Instruct", help="Model slug for run path.")
     parser.add_argument("--axis-name", default="sycophancy-pilot-v1", help="Axis slug for run path.")
@@ -89,67 +98,17 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def load_activation_rows(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    sources = [
-        bool(args.activation_dataset_repo_id),
-        bool(args.activation_dataset_dir),
-        bool(args.activation_jsonl),
-    ]
-    if sum(sources) != 1:
-        raise ValueError("Specify exactly one of --activation-dataset-repo-id, --activation-dataset-dir, or --activation-jsonl")
-
-    if args.activation_jsonl:
-        path = args.activation_jsonl.resolve()
-        return load_jsonl(path), {"source_type": "jsonl", "path": str(path)}
-
-    from datasets import load_dataset, load_from_disk
-
-    if args.activation_dataset_dir:
-        path = args.activation_dataset_dir.resolve()
-        dataset = load_from_disk(str(path))
-        return [dict(row) for row in dataset], {"source_type": "local_dataset", "path": str(path)}
-
-    dataset = load_dataset(args.activation_dataset_repo_id, split=args.split, token=os.environ.get("HF_TOKEN"))
-    return [dict(row) for row in dataset], {
-        "source_type": "hf_dataset",
-        "repo_id": args.activation_dataset_repo_id,
-        "split": args.split,
-    }
-
-
-def validate_and_stack(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, list[str], list[str]]:
-    if not rows:
-        raise ValueError("No activation rows loaded")
-
-    features: list[np.ndarray] = []
-    labels: list[int] = []
-    sample_ids: list[str] = []
-    dataset_sources: list[str] = []
-    for row in rows:
-        activation = np.asarray(row.get("activation"), dtype=np.float32)
-        if activation.ndim != 1:
-            raise ValueError(f"Expected 1D activation for sample {row.get('ids')}, got shape {activation.shape}")
-        label = int(row.get("label", -1))
-        if label not in {0, 1}:
-            raise ValueError(f"Expected binary label 0/1 for sample {row.get('ids')}, got {label}")
-        features.append(activation)
-        labels.append(label)
-        sample_ids.append(str(row.get("ids", "")))
-        dataset_sources.append(str(row.get("dataset_source", "unknown")))
-
-    return (
-        np.stack(features).astype(np.float32),
-        np.asarray(labels, dtype=np.int64),
-        sample_ids,
-        dataset_sources,
-    )
-
-
-def grouped_indices(dataset_sources: list[str]) -> dict[str, np.ndarray]:
-    groups: dict[str, list[int]] = {"all": list(range(len(dataset_sources)))}
-    for index, source in enumerate(dataset_sources):
-        groups.setdefault(source, []).append(index)
-    return {name: np.asarray(indices, dtype=np.int64) for name, indices in groups.items() if indices}
+def axis_expected_pooling(axis_bundle_dir: Path) -> str | None:
+    manifest_path = axis_bundle_dir / "meta" / "run_manifest.json"
+    if not manifest_path.exists():
+        return None
+    role_experiment_config_path = read_json(manifest_path).get("role_experiment_config_path")
+    if not role_experiment_config_path:
+        return None
+    config_path = Path(str(role_experiment_config_path))
+    if not config_path.exists():
+        return None
+    return str(load_config(config_path).analysis.get("pooling") or "")
 
 
 def main() -> None:
@@ -178,9 +137,50 @@ def main() -> None:
         key: str(payload.get("layer_label", key))
         for key, payload in axis_bundle["layers"].items()
     }
+    expected_pooling = axis_expected_pooling(axis_bundle_dir)
 
-    rows, source_manifest = load_activation_rows(args)
-    features, labels, sample_ids, dataset_sources = validate_and_stack(rows)
+    rows, source_manifest = load_activation_rows(
+        activation_dataset_repo_id=args.activation_dataset_repo_id,
+        activation_dataset_dir=args.activation_dataset_dir,
+        activation_jsonl=args.activation_jsonl,
+        split=args.split,
+    )
+    stacked = validate_and_stack_activation_rows(
+        rows,
+        group_field=args.group_field,
+        source_manifest=source_manifest,
+    )
+    ensure_pooling_compatibility(
+        activation_pooling=stacked.activation_pooling,
+        expected_pooling=expected_pooling,
+        context="Sycophancy activation rows",
+    )
+    compatible_layer_specs: list[str] = []
+    skipped_layer_specs: list[str] = []
+    for layer_spec in layer_specs:
+        layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
+        try:
+            ensure_single_layer_compatibility(
+                activation_layer_number=stacked.activation_layer_number,
+                expected_layer_numbers=layer_numbers,
+                context="Sycophancy activation rows",
+            )
+        except ValueError:
+            skipped_layer_specs.append(layer_spec)
+            continue
+        compatible_layer_specs.append(layer_spec)
+    if not compatible_layer_specs:
+        raise ValueError(
+            "No axis layer specs are compatible with the cached activation rows; "
+            f"activation_layer_number={stacked.activation_layer_number!r}, bundle_layers={layer_specs!r}"
+        )
+    layer_specs = compatible_layer_specs
+    layer_labels = {key: layer_labels[key] for key in layer_specs}
+
+    features = stacked.features
+    labels = stacked.labels
+    sample_ids = stacked.sample_ids
+    dataset_sources = stacked.group_values
     groups = grouped_indices(dataset_sources)
     dataset_names = list(groups.keys())
 
@@ -191,8 +191,13 @@ def main() -> None:
             "axis_bundle_run_dir": str(axis_bundle_dir),
             "axis_bundle_path": str(axis_bundle_path),
             "activation_source": source_manifest,
+            "activation_group_field": args.group_field,
+            "activation_pooling": stacked.activation_pooling,
+            "activation_layer_number": stacked.activation_layer_number,
+            "axis_expected_pooling": expected_pooling,
             "methods": args.methods,
             "layer_specs": layer_specs,
+            "skipped_incompatible_layer_specs": skipped_layer_specs,
             "record_count": int(labels.shape[0]),
             "label_counts": dict(Counter(int(value) for value in labels.tolist())),
             "dataset_source_counts": dict(Counter(dataset_sources)),
