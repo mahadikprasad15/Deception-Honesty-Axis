@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from deception_honesty_axis.common import append_jsonl, ensure_dir, load_jsonl, make_run_id, slugify, write_json
+from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
+from deception_honesty_axis.role_axis_transfer import (
+    ZERO_SHOT_METHODS,
+    ZERO_SHOT_SOURCE,
+    append_csv_row,
+    evaluate_zero_shot,
+    load_role_axis_bundle,
+    read_completed_metric_keys,
+    save_metric_heatmaps,
+    save_score_rows,
+    save_zero_shot_grouped_barplots,
+    scores_for_layer,
+    write_summary_csv,
+)
+
+
+METRIC_FIELDS = [
+    "method",
+    "layer_spec",
+    "layer_label",
+    "source_dataset",
+    "target_dataset",
+    "train_split",
+    "eval_split",
+    "auroc",
+    "auprc",
+    "balanced_accuracy",
+    "f1",
+    "accuracy",
+    "count",
+    "completed_at",
+]
+
+ZERO_SHOT_METHOD_SPECS = {
+    "contrast_zero_shot": ("contrast", None),
+    "pc1_zero_shot": ("pc_scores", 0),
+    "pc2_zero_shot": ("pc_scores", 1),
+    "pc3_zero_shot": ("pc_scores", 2),
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Evaluate a saved role-axis bundle on cached sycophancy output activations."
+    )
+    parser.add_argument("--axis-bundle-run-dir", type=Path, required=True, help="Run dir containing results/axis_bundle.pt.")
+    parser.add_argument("--activation-dataset-repo-id", default=None, help="HF Dataset repo with activation rows.")
+    parser.add_argument("--activation-dataset-dir", type=Path, default=None, help="Local datasets.save_to_disk directory.")
+    parser.add_argument("--activation-jsonl", type=Path, default=None, help="Local records.jsonl from extraction run.")
+    parser.add_argument("--split", default="train", help="HF Dataset split to load when using --activation-dataset-repo-id.")
+    parser.add_argument("--artifact-root", type=Path, default=Path("artifacts"), help="Repo artifact root.")
+    parser.add_argument("--model-name", default="meta-llama/Llama-3.2-3B-Instruct", help="Model slug for run path.")
+    parser.add_argument("--axis-name", default="sycophancy-pilot-v1", help="Axis slug for run path.")
+    parser.add_argument("--run-id", default=None, help="Optional fixed run id.")
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        default=["contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot"],
+        help="Zero-shot methods to evaluate.",
+    )
+    parser.add_argument(
+        "--push-to-hub-repo-id",
+        default=None,
+        help="Optional HF dataset repo to upload this evaluation run folder into.",
+    )
+    parser.add_argument(
+        "--path-in-repo",
+        default=None,
+        help="Optional destination path in the HF artifacts repo. Defaults to the run path under artifacts/.",
+    )
+    return parser.parse_args()
+
+
+def utc_now_iso() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+def load_activation_rows(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    sources = [
+        bool(args.activation_dataset_repo_id),
+        bool(args.activation_dataset_dir),
+        bool(args.activation_jsonl),
+    ]
+    if sum(sources) != 1:
+        raise ValueError("Specify exactly one of --activation-dataset-repo-id, --activation-dataset-dir, or --activation-jsonl")
+
+    if args.activation_jsonl:
+        path = args.activation_jsonl.resolve()
+        return load_jsonl(path), {"source_type": "jsonl", "path": str(path)}
+
+    from datasets import load_dataset, load_from_disk
+
+    if args.activation_dataset_dir:
+        path = args.activation_dataset_dir.resolve()
+        dataset = load_from_disk(str(path))
+        return [dict(row) for row in dataset], {"source_type": "local_dataset", "path": str(path)}
+
+    dataset = load_dataset(args.activation_dataset_repo_id, split=args.split, token=os.environ.get("HF_TOKEN"))
+    return [dict(row) for row in dataset], {
+        "source_type": "hf_dataset",
+        "repo_id": args.activation_dataset_repo_id,
+        "split": args.split,
+    }
+
+
+def validate_and_stack(rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, list[str], list[str]]:
+    if not rows:
+        raise ValueError("No activation rows loaded")
+
+    features: list[np.ndarray] = []
+    labels: list[int] = []
+    sample_ids: list[str] = []
+    dataset_sources: list[str] = []
+    for row in rows:
+        activation = np.asarray(row.get("activation"), dtype=np.float32)
+        if activation.ndim != 1:
+            raise ValueError(f"Expected 1D activation for sample {row.get('ids')}, got shape {activation.shape}")
+        label = int(row.get("label", -1))
+        if label not in {0, 1}:
+            raise ValueError(f"Expected binary label 0/1 for sample {row.get('ids')}, got {label}")
+        features.append(activation)
+        labels.append(label)
+        sample_ids.append(str(row.get("ids", "")))
+        dataset_sources.append(str(row.get("dataset_source", "unknown")))
+
+    return (
+        np.stack(features).astype(np.float32),
+        np.asarray(labels, dtype=np.int64),
+        sample_ids,
+        dataset_sources,
+    )
+
+
+def grouped_indices(dataset_sources: list[str]) -> dict[str, np.ndarray]:
+    groups: dict[str, list[int]] = {"all": list(range(len(dataset_sources)))}
+    for index, source in enumerate(dataset_sources):
+        groups.setdefault(source, []).append(index)
+    return {name: np.asarray(indices, dtype=np.int64) for name, indices in groups.items() if indices}
+
+
+def main() -> None:
+    args = parse_args()
+    invalid_methods = [method for method in args.methods if method not in ZERO_SHOT_METHODS]
+    if invalid_methods:
+        raise ValueError(f"Only zero-shot methods are supported here; invalid={invalid_methods}")
+
+    run_id = args.run_id or make_run_id()
+    run_root = ensure_dir(
+        args.artifact_root
+        / "runs"
+        / "sycophancy-activation-probe"
+        / slugify(args.model_name)
+        / slugify(args.axis_name)
+        / run_id
+    )
+    for relative in ("inputs", "results", "logs", "checkpoints", "meta"):
+        ensure_dir(run_root / relative)
+
+    axis_bundle_dir = args.axis_bundle_run_dir.resolve()
+    axis_bundle_path = axis_bundle_dir / "results" / "axis_bundle.pt"
+    axis_bundle = load_role_axis_bundle(axis_bundle_path)
+    layer_specs = list(axis_bundle["layers"].keys())
+    layer_labels = {
+        key: str(payload.get("layer_label", key))
+        for key, payload in axis_bundle["layers"].items()
+    }
+
+    rows, source_manifest = load_activation_rows(args)
+    features, labels, sample_ids, dataset_sources = validate_and_stack(rows)
+    groups = grouped_indices(dataset_sources)
+    dataset_names = list(groups.keys())
+
+    write_analysis_manifest(
+        run_root,
+        {
+            "run_id": run_id,
+            "axis_bundle_run_dir": str(axis_bundle_dir),
+            "axis_bundle_path": str(axis_bundle_path),
+            "activation_source": source_manifest,
+            "methods": args.methods,
+            "layer_specs": layer_specs,
+            "record_count": int(labels.shape[0]),
+            "label_counts": dict(Counter(int(value) for value in labels.tolist())),
+            "dataset_source_counts": dict(Counter(dataset_sources)),
+        },
+    )
+    write_json(run_root / "inputs" / "activation_source.json", source_manifest)
+    write_stage_status(
+        run_root,
+        "evaluate_sycophancy_activation_probe",
+        "running",
+        {"record_count": int(labels.shape[0]), "datasets": dataset_names, "methods": args.methods},
+    )
+
+    metrics_path = run_root / "results" / "pairwise_metrics.csv"
+    score_rows_path = run_root / "results" / "per_example_scores.jsonl"
+    completed_keys = read_completed_metric_keys(metrics_path)
+    total_expected = len(layer_specs) * len(dataset_names) * len(args.methods)
+    completed_now = 0
+
+    write_json(
+        run_root / "checkpoints" / "progress.json",
+        {
+            "state": "running",
+            "expected_combinations": total_expected,
+            "completed_combinations": len(completed_keys),
+        },
+    )
+
+    for layer_spec in layer_specs:
+        layer_bundle = axis_bundle["layers"][layer_spec]
+        layer_scores = scores_for_layer(features, layer_bundle)
+        for dataset_name, indices in groups.items():
+            group_labels = labels[indices]
+            group_sample_ids = [sample_ids[index] for index in indices.tolist()]
+            for method in args.methods:
+                metric_key = (method, layer_spec, ZERO_SHOT_SOURCE, dataset_name)
+                if metric_key in completed_keys:
+                    continue
+                score_key, component_index = ZERO_SHOT_METHOD_SPECS[method]
+                if component_index is None:
+                    honest_like_scores = layer_scores[score_key][indices]
+                else:
+                    if layer_scores[score_key].shape[1] <= component_index:
+                        continue
+                    honest_like_scores = layer_scores[score_key][indices, component_index]
+
+                metrics, deceptive_scores, probabilities = evaluate_zero_shot(group_labels, honest_like_scores)
+                row = {
+                    "method": method,
+                    "layer_spec": layer_spec,
+                    "layer_label": layer_labels[layer_spec],
+                    "source_dataset": ZERO_SHOT_SOURCE,
+                    "target_dataset": dataset_name,
+                    "train_split": "",
+                    "eval_split": "all",
+                    "completed_at": utc_now_iso(),
+                    **metrics,
+                }
+                append_csv_row(metrics_path, METRIC_FIELDS, row)
+                completed_keys.add(metric_key)
+                completed_now += 1
+                save_score_rows(
+                    score_rows_path,
+                    [
+                        {
+                            "method": method,
+                            "layer_spec": layer_spec,
+                            "source_dataset": ZERO_SHOT_SOURCE,
+                            "target_dataset": dataset_name,
+                            "sample_id": sample_id,
+                            "label": int(label),
+                            "deceptive_score": float(score),
+                            "probability": float(probability),
+                            "prediction": int(probability >= 0.5),
+                        }
+                        for sample_id, label, score, probability in zip(
+                            group_sample_ids,
+                            group_labels,
+                            deceptive_scores,
+                            probabilities,
+                            strict=False,
+                        )
+                    ],
+                )
+                print(
+                    f"[sycophancy-probe] {len(completed_keys)}/{total_expected} "
+                    f"{method} @ {layer_spec} -> {dataset_name} AUROC={metrics['auroc']:.3f}"
+                )
+                write_json(
+                    run_root / "checkpoints" / "progress.json",
+                    {
+                        "state": "running",
+                        "expected_combinations": total_expected,
+                        "completed_combinations": len(completed_keys),
+                        "completed_this_run": completed_now,
+                    },
+                )
+
+    import csv
+
+    metric_rows = []
+    with metrics_path.open("r", encoding="utf-8", newline="") as handle:
+        metric_rows = list(csv.DictReader(handle))
+    write_summary_csv(run_root / "results" / "summary_by_method.csv", metric_rows)
+    heatmap_paths = save_metric_heatmaps(
+        run_root / "results" / "plots",
+        metric_rows,
+        args.methods,
+        layer_specs,
+        dataset_names,
+    )
+    grouped_bar_paths = save_zero_shot_grouped_barplots(
+        run_root / "results" / "plots",
+        metric_rows,
+        args.methods,
+        layer_specs,
+        dataset_names,
+    )
+    write_json(
+        run_root / "checkpoints" / "progress.json",
+        {
+            "state": "completed",
+            "expected_combinations": total_expected,
+            "completed_combinations": len(completed_keys),
+            "completed_this_run": completed_now,
+            "heatmaps": heatmap_paths,
+            "grouped_bar_plots": grouped_bar_paths,
+        },
+    )
+    write_stage_status(
+        run_root,
+        "evaluate_sycophancy_activation_probe",
+        "completed",
+        {
+            "expected_combinations": total_expected,
+            "completed_combinations": len(completed_keys),
+            "heatmaps": heatmap_paths,
+            "grouped_bar_plots": grouped_bar_paths,
+        },
+    )
+
+    if args.push_to_hub_repo_id:
+        from huggingface_hub import upload_folder
+
+        default_path_in_repo = str(run_root.relative_to(args.artifact_root))
+        path_in_repo = args.path_in_repo or default_path_in_repo
+        upload_folder(
+            repo_id=args.push_to_hub_repo_id,
+            repo_type="dataset",
+            folder_path=str(run_root),
+            path_in_repo=path_in_repo,
+            token=os.environ.get("HF_TOKEN"),
+        )
+        print(f"[sycophancy-probe] uploaded to hf://datasets/{args.push_to_hub_repo_id}/{path_in_repo}")
+
+    print(f"[sycophancy-probe] completed run_id={run_id} root={run_root}")
+
+
+if __name__ == "__main__":
+    main()
