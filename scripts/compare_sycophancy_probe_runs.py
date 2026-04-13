@@ -13,6 +13,22 @@ from deception_honesty_axis.role_axis_transfer import METHOD_COLORS, METHOD_LABE
 
 
 DEFAULT_METHODS = ["contrast_zero_shot", "pc1_zero_shot", "pc2_zero_shot", "pc3_zero_shot"]
+DATASET_LABEL_OVERRIDES = {
+    "sycophancy_dataset_train": "Sycophancy Dataset",
+    "sycophancy_dataset-train": "Sycophancy Dataset",
+    "open_ended_sycophancy_train": "Open-Ended Sycophancy",
+    "open-ended_sycophancy_train": "Open-Ended Sycophancy",
+    "open-ended-sycophancy-train": "Open-Ended Sycophancy",
+    "oeq_validation_human_balanced_200": "OEQ Validation",
+    "oeq-validation_human-balanced-200": "OEQ Validation",
+    "oeq-validation-human-balanced-200": "OEQ Validation",
+    "oeq_indirectness_human_balanced_200": "OEQ Indirectness",
+    "oeq-indirectness_human-balanced-200": "OEQ Indirectness",
+    "oeq-indirectness-human-balanced-200": "OEQ Indirectness",
+    "oeq_framing_human_balanced_200": "OEQ Framing",
+    "oeq-framing_human-balanced-200": "OEQ Framing",
+    "oeq-framing-human-balanced-200": "OEQ Framing",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include target_dataset=all rows in addition to dataset-specific rows.",
     )
+    parser.add_argument(
+        "--exclude-datasets",
+        nargs="+",
+        default=None,
+        help="Optional target_dataset names to exclude entirely.",
+    )
     return parser.parse_args()
 
 
@@ -59,7 +81,12 @@ def _infer_run_label(run_dir: Path) -> str:
 
 
 def _display_label(dataset_name: str) -> str:
-    return dataset_name.replace("_", " ").replace("-", "\n")
+    if dataset_name in DATASET_LABEL_OVERRIDES:
+        return DATASET_LABEL_OVERRIDES[dataset_name]
+    text = dataset_name.replace("_", " ").replace("-", " ").strip()
+    text = " ".join(part for part in text.split() if part)
+    title_cased = text.title()
+    return title_cased.replace("Oeq", "OEQ")
 
 
 def _load_metric_rows(run_dir: Path) -> list[dict[str, str]]:
@@ -79,13 +106,15 @@ def _select_rows(run_dir: Path, methods: list[str], include_all: bool) -> list[d
     return filtered
 
 
-def _collect_records(run_dirs: list[Path], methods: list[str], include_all: bool) -> list[dict[str, object]]:
+def _collect_records(run_dirs: list[Path], methods: list[str], include_all: bool, excluded_datasets: set[str]) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     seen_keys: set[tuple[str, str, str]] = set()
     for run_dir in run_dirs:
         run_label = _infer_run_label(run_dir.resolve())
         for row in _select_rows(run_dir.resolve(), methods, include_all):
             target_dataset = str(row.get("target_dataset", "")).strip()
+            if target_dataset in excluded_datasets:
+                continue
             method = str(row.get("method", "")).strip()
             layer_spec = str(row.get("layer_spec", "")).strip()
             key = (target_dataset, method, layer_spec)
@@ -174,7 +203,13 @@ def _plot_grouped_bars(output_path: Path, records: list[dict[str, object]], meth
 def main() -> None:
     args = parse_args()
     run_dirs = [path.resolve() for path in args.run_dirs]
-    records = _collect_records(run_dirs, [str(method) for method in args.methods], bool(args.include_all))
+    excluded_datasets = {str(value) for value in (args.exclude_datasets or [])}
+    records = _collect_records(
+        run_dirs,
+        [str(method) for method in args.methods],
+        bool(args.include_all),
+        excluded_datasets,
+    )
     if not records:
         raise ValueError("No comparison rows found for the selected run dirs and methods")
 
@@ -198,6 +233,7 @@ def main() -> None:
             "methods": [str(method) for method in args.methods],
             "layer_specs": layer_specs,
             "include_all": bool(args.include_all),
+            "exclude_datasets": sorted(excluded_datasets),
         },
     )
     write_stage_status(run_root, "compare_sycophancy_probe_runs", "running", {"run_id": run_id})
