@@ -5,7 +5,7 @@ import json
 import random
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 from typing import Any, Callable
@@ -17,6 +17,7 @@ EXTERNAL_SYCOPHANCY_ADAPTERS = {
     "gsm8k_sycophancy": "praneethd7/gsm8k_sycophancy",
     "ariana_sycophancy": "arianaazarbal/sycophancy_dataset",
     "open_ended_sycophancy": "henrypapadatos/Open-ended_sycophancy",
+    "oeq_prepared": "oeq_prepared",
 }
 
 LABEL_NAME_TO_VALUE = {
@@ -58,9 +59,10 @@ class ExternalSycophancyExample:
     category: str
     prompt_messages: tuple[dict[str, str], ...]
     assistant_output: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def manifest_row(self) -> dict[str, Any]:
-        return {
+        row = {
             "ids": self.ids,
             "pair_id": self.pair_id,
             "dataset_source": self.dataset_source,
@@ -74,6 +76,10 @@ class ExternalSycophancyExample:
             "prompt_messages": list(self.prompt_messages),
             "assistant_output": self.assistant_output,
         }
+        for key, value in self.metadata.items():
+            if key not in row:
+                row[key] = value
+        return row
 
 
 @dataclass(frozen=True)
@@ -90,9 +96,10 @@ class MaterializedExternalSycophancyRecord:
     category: str
     prompt_text: str
     activation_text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def output_without_activation(self) -> dict[str, Any]:
-        return {
+        row = {
             "ids": self.ids,
             "pair_id": self.pair_id,
             "dataset_source": self.dataset_source,
@@ -104,6 +111,10 @@ class MaterializedExternalSycophancyRecord:
             "label": self.label,
             "category": self.category,
         }
+        for key, value in self.metadata.items():
+            if key not in row:
+                row[key] = value
+        return row
 
 
 class ExternalSycophancyActivationDataset:
@@ -320,6 +331,7 @@ def materialize_external_examples(
                 category=example.category,
                 prompt_text=prompt_text,
                 activation_text=activation_text,
+                metadata=dict(example.metadata),
             )
         )
     return materialized
@@ -402,6 +414,79 @@ def _gsm8k_sycophancy_examples(
                 category="",
                 prompt_messages=prompt_messages,
                 assistant_output=assistant_output,
+            )
+        )
+    return examples
+
+
+def _prepared_singleton_completion_examples(
+    *,
+    rows: list[dict[str, Any]],
+    repo_id: str,
+    split: str,
+    adapter_name: str,
+) -> list[ExternalSycophancyExample]:
+    default_dataset_source = _dataset_source_slug(repo_id, split)
+    examples: list[ExternalSycophancyExample] = []
+    for row_index, row in enumerate(rows):
+        source_record_id = str(
+            row.get("source_record_id")
+            or row.get("id")
+            or row.get("row_id")
+            or row.get("Unnamed: 0")
+            or row.get("")
+            or f"row-{row_index:06d}"
+        )
+        dataset_source = str(row.get("dataset_source") or default_dataset_source)
+        prompt = _require_text(row, "prompt", context=source_record_id)
+        assistant_output = str(row.get("assistant_output") or row.get("human") or "")
+        if not assistant_output:
+            raise ValueError(f"Missing assistant output for {source_record_id}")
+        label_value, inferred_label_name = map_external_label(row.get("label"))
+        row_label_name = str(row.get("label_name") or "").strip()
+        if row_label_name:
+            label_name = row_label_name
+        else:
+            label_name = inferred_label_name
+        category = str(row.get("category") or "")
+        prompt_messages = ({"role": "user", "content": prompt},)
+        metadata = {
+            key: value
+            for key, value in row.items()
+            if key not in {
+                "",
+                "id",
+                "ids",
+                "pair_id",
+                "dataset_source",
+                "source_repo_id",
+                "source_split",
+                "source_record_id",
+                "adapter_name",
+                "label_name",
+                "label",
+                "category",
+                "prompt",
+                "assistant_output",
+                "human",
+            }
+            and value not in (None, "")
+        }
+        examples.append(
+            ExternalSycophancyExample(
+                ids=str(row.get("ids") or f"{dataset_source}::{source_record_id}"),
+                pair_id=str(row.get("pair_id") or _stable_hash(dataset_source, source_record_id)),
+                dataset_source=dataset_source,
+                source_repo_id=repo_id,
+                source_split=split,
+                source_record_id=source_record_id,
+                adapter_name=adapter_name,
+                label_name=label_name,
+                label=label_value,
+                category=category,
+                prompt_messages=prompt_messages,
+                assistant_output=assistant_output,
+                metadata=metadata,
             )
         )
     return examples
@@ -566,6 +651,7 @@ ADAPTER_BUILDERS: dict[str, Callable[..., list[ExternalSycophancyExample]]] = {
     "gsm8k_sycophancy": _gsm8k_sycophancy_examples,
     "ariana_sycophancy": _paired_completion_examples,
     "open_ended_sycophancy": _paired_completion_examples,
+    "oeq_prepared": _prepared_singleton_completion_examples,
 }
 
 
@@ -578,6 +664,8 @@ def resolve_external_sycophancy_adapter(adapter_name: str | None, repo_id: str) 
     for candidate_name, candidate_repo_id in EXTERNAL_SYCOPHANCY_ADAPTERS.items():
         if candidate_repo_id == repo_id:
             return candidate_name
+    if repo_id.split("/")[-1].startswith("oeq-"):
+        return "oeq_prepared"
     raise ValueError(f"Could not infer adapter for repo_id={repo_id!r}; pass --adapter explicitly")
 
 

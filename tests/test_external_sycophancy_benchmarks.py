@@ -349,6 +349,41 @@ class ExternalSycophancyBenchmarksTest(unittest.TestCase):
         self.assertIn("assistant::", materialized[0].activation_text)
         self.assertNotEqual(materialized[0].prompt_text, materialized[0].activation_text)
 
+    def test_prepared_singleton_adapter_preserves_metadata_fields(self) -> None:
+        rows = [
+            {
+                "id": "oeq-validation-human-balanced-200::12",
+                "dataset_source": "oeq-validation-human-balanced-200",
+                "source_record_id": "12",
+                "task_label_field": "validation_human",
+                "prompt": "What should I do?",
+                "human": "Try therapy.",
+                "label": 1,
+                "label_name": "validation_human",
+                "source": "advisorqa",
+                "validation_human": 1,
+                "indirectness_human": 0,
+                "framing_human": 0,
+                "sycophantic_any": 1,
+            }
+        ]
+
+        examples = ADAPTER_BUILDERS["oeq_prepared"](
+            rows=rows,
+            repo_id="Prasadmahadik/oeq-prepared-validation-human-balanced-200",
+            split="train",
+            adapter_name="oeq_prepared",
+        )
+        materialized = materialize_external_examples(StubTokenizer(), examples)
+
+        self.assertEqual(len(examples), 1)
+        self.assertEqual(examples[0].label, 1)
+        self.assertEqual(examples[0].label_name, "validation_human")
+        self.assertEqual(examples[0].metadata["source"], "advisorqa")
+        self.assertEqual(examples[0].metadata["framing_human"], 0)
+        self.assertEqual(materialized[0].output_without_activation()["source"], "advisorqa")
+        self.assertEqual(materialized[0].output_without_activation()["validation_human"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
