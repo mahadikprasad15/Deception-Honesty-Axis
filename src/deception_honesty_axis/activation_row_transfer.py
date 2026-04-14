@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,6 +17,11 @@ from deception_honesty_axis.activation_row_transfer_config import (
     ActivationRowDatasetConfig,
     ActivationRowSourceConfig,
 )
+from deception_honesty_axis.role_axis_transfer import (
+    load_completion_mean_split,
+    resolve_layer_specs,
+)
+from deception_honesty_axis.sycophancy_activations import normalize_activation_pooling
 
 
 ACTIVATION_TRANSFER_METHODS = {"activation_logistic"}
@@ -33,6 +39,7 @@ class LoadedActivationRowSplit:
     group_field: str
     group_value: str | None
     feature_dim: int
+    source_kind: str
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -44,6 +51,7 @@ class LoadedActivationRowSplit:
             "activation_layer_number": self.activation_layer_number,
             "group_field": self.group_field,
             "group_value": self.group_value,
+            "source_kind": self.source_kind,
             "source_manifest": self.source_manifest,
         }
 
@@ -74,6 +82,35 @@ def _select_rows(rows: list[dict[str, Any]], source: ActivationRowSourceConfig, 
     return filtered
 
 
+def _resolve_completion_split_layer_spec(split_dir: Path, expected_layer_number: int | None):  # noqa: ANN202
+    from safetensors.torch import load_file
+
+    shard_paths = sorted(split_dir.glob("shard_*.safetensors"))
+    if not shard_paths:
+        raise FileNotFoundError(f"No shard_*.safetensors found in {split_dir}")
+    first_shard = load_file(str(shard_paths[0]))
+    if not first_shard:
+        raise ValueError(f"No tensors found in {shard_paths[0]}")
+    first_tensor = next(iter(first_shard.values()))
+    layer_count = int(first_tensor.shape[0])
+    if layer_count == 1 and expected_layer_number is not None:
+        from deception_honesty_axis.role_axis_transfer import ResolvedLayerSpec
+
+        return ResolvedLayerSpec(
+            key=str(expected_layer_number),
+            label=f"L{expected_layer_number}",
+            layer_indices=(0,),
+            layer_numbers=(int(expected_layer_number),),
+        )
+    if expected_layer_number is None:
+        if layer_count != 1:
+            raise ValueError(
+                "completion_split sources with multi-layer tensors require expected_layer_number in the config"
+            )
+        expected_layer_number = 1
+    return resolve_layer_specs(layer_count, [str(expected_layer_number)])[0]
+
+
 def load_activation_row_split(
     dataset_name: str,
     split_name: str,
@@ -82,6 +119,44 @@ def load_activation_row_split(
     expected_pooling: str | None,
     expected_layer_number: int | None,
 ) -> LoadedActivationRowSplit:
+    if source.source_kind == "completion_split":
+        if source.split_dir is None:
+            raise ValueError(f"Dataset {dataset_name!r} split {split_name!r} requires split_dir for completion_split")
+        resolved_spec = _resolve_completion_split_layer_spec(source.split_dir, expected_layer_number)
+        cached = load_completion_mean_split(source.split_dir, [resolved_spec])
+        activation_pooling = normalize_activation_pooling("completion_mean")
+        ensure_pooling_compatibility(
+            activation_pooling=activation_pooling,
+            expected_pooling=expected_pooling,
+            context=f"{dataset_name} {split_name} completion split",
+        )
+        if expected_layer_number is not None:
+            ensure_single_layer_compatibility(
+                activation_layer_number=int(resolved_spec.layer_numbers[0]),
+                expected_layer_numbers=[expected_layer_number],
+                context=f"{dataset_name} {split_name} completion split",
+            )
+        return LoadedActivationRowSplit(
+            split_name=split_name,
+            features=cached.features_by_spec[resolved_spec.key],
+            labels=cached.labels,
+            sample_ids=cached.sample_ids,
+            activation_pooling=activation_pooling,
+            activation_layer_number=int(resolved_spec.layer_numbers[0]),
+            source_manifest={
+                "source_kind": "completion_split",
+                "split_dir": str(source.split_dir),
+                "requested_split_name": split_name,
+                "resolved_layer_spec": resolved_spec.to_manifest(),
+                "dataset": cached.dataset,
+                "cached_split": cached.split,
+            },
+            group_field=source.group_field,
+            group_value=source.group_value,
+            feature_dim=int(cached.features_by_spec[resolved_spec.key].shape[1]),
+            source_kind="completion_split",
+        )
+
     rows, source_manifest = load_activation_rows(**source.resolved_load_kwargs())
     selected_rows = _select_rows(rows, source, dataset_name)
     stacked = validate_and_stack_activation_rows(
@@ -109,6 +184,7 @@ def load_activation_row_split(
         activation_layer_number=stacked.activation_layer_number,
         source_manifest={
             **source_manifest,
+            "source_kind": "activation_rows",
             "requested_split_name": split_name,
             "selection_group_field": source.group_field,
             "selection_group_value": source.group_value,
@@ -116,6 +192,7 @@ def load_activation_row_split(
         group_field=source.group_field,
         group_value=source.group_value,
         feature_dim=int(stacked.features.shape[1]),
+        source_kind="activation_rows",
     )
 
 

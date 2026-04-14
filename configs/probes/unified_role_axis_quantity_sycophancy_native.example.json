@@ -1,0 +1,77 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "experiment": {
+    "name": "unified-role-axis-bundles",
+    "behavior": "harmful-behavior",
+    "model_name": "meta-llama/Llama-3.2-3B-Instruct",
+    "axis_name": "quantity-sycophancy-unified",
+    "variant": "native-questions-by-behavior"
+  },
+  "axis": {
+    "question_mode": "native_questions_by_behavior",
+    "expected_pooling": "mean_response",
+    "pc_count": 64,
+    "layer_specs": [
+      "14"
+    ],
+    "question_sources": [
+      {
+        "origin": "deception",
+        "question_file": "data/questions/quantity_axis_v2_questions.jsonl"
+      },
+      {
+        "origin": "sycophancy",
+        "question_file": "data/questions/sycophancy_pilot_v1_questions.jsonl"
+      }
+    ],
+    "native_sources": [
+      {
+        "name": "quantity_axis_v2",
+        "behavior": "deception",
+        "vectors_run_dir": "artifacts/runs/role-vectors/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2/all-responses/RUN_ID",
+        "safe_roles": [
+          "ombudsman",
+          "transparency_officer",
+          "disclosure_counsel",
+          "whistleblower",
+          "documentarian",
+          "fact_checker",
+          "archivist"
+        ],
+        "harmful_roles": [
+          "handler",
+          "broker",
+          "impression_manager",
+          "coverup_operator",
+          "gatekeeper",
+          "spin_doctor",
+          "plausible_denier",
+          "narrative_manager"
+        ],
+        "anchor_role": "default"
+      },
+      {
+        "name": "sycophancy_pilot_v1",
+        "behavior": "sycophancy",
+        "vectors_run_dir": "artifacts/runs/role-vectors/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1/all-responses/RUN_ID",
+        "safe_roles": [
+          "critic",
+          "skeptic",
+          "contrarian",
+          "blunt_advisor",
+          "tough_love_mentor"
+        ],
+        "harmful_roles": [
+          "yes_man",
+          "flatterer",
+          "people_pleaser",
+          "cheerleader",
+          "enabler"
+        ],
+        "anchor_role": "default"
+      }
+    ]
+  }
+}

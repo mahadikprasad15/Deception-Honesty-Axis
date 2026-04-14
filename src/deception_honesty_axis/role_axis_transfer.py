@@ -27,6 +27,11 @@ DATASET_LABELS = {
     "Deception-InsiderTrading-SallyConcat-completion": "Insider",
     "Deception-Mask-completion": "Mask",
     "Deception-Roleplaying-completion": "Roleplay",
+    "Sycophancy Dataset": "Sycophancy Dataset",
+    "Open-Ended Sycophancy": "Open-Ended Sycophancy",
+    "OEQ Validation": "OEQ Validation",
+    "OEQ Indirectness": "OEQ Indirectness",
+    "OEQ Framing": "OEQ Framing",
     ZERO_SHOT_SOURCE: "ZeroShot",
 }
 
@@ -175,6 +180,7 @@ def build_role_axis_bundle(
     anchor_role: str,
     layer_specs: list[str],
     layer_numbers: list[int] | None = None,
+    pc_count: int = 3,
 ) -> dict[str, Any]:
     import torch
 
@@ -183,6 +189,9 @@ def build_role_axis_bundle(
     for role_name in honest_roles + deceptive_roles:
         if role_name not in role_vectors:
             raise KeyError(f"Missing role '{role_name}' in role vectors")
+
+    if pc_count < 1:
+        raise ValueError(f"pc_count must be positive, got {pc_count}")
 
     comparison_roles = list(deceptive_roles) + list(honest_roles)
     layer_count = int(next(iter(role_vectors.values())).shape[0])
@@ -200,7 +209,7 @@ def build_role_axis_bundle(
         deceptive_mean = torch.stack([layer_role_vectors[name] for name in deceptive_roles], dim=0).mean(dim=0)
         contrast_axis = _normalize(honest_mean - deceptive_mean)
         pca = run_centered_pca(layer_role_vectors, comparison_roles)
-        components = _top_components(pca["components"])
+        components = _top_components(pca["components"], pc_count)
         pc_signs = [1.0] * int(components.shape[0])
 
         centered_honest = honest_mean - pca["mean_vector"]
@@ -262,6 +271,7 @@ def build_role_axis_bundle(
         "honest_roles": list(honest_roles),
         "deceptive_roles": list(deceptive_roles),
         "comparison_roles": comparison_roles,
+        "pc_count": int(pc_count),
         "layer_count": layer_count,
         "activation_layer_numbers": activation_layer_numbers,
         "resolved_layer_specs": [spec.to_manifest() for spec in resolved_specs],

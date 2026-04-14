@@ -63,6 +63,25 @@ class RoleAxisTransferTest(unittest.TestCase):
         cosine = float(torch.dot(pc1, contrast_axis) / (torch.linalg.norm(pc1) * torch.linalg.norm(contrast_axis)))
         self.assertGreater(cosine, 0.0)
 
+    def test_build_role_axis_bundle_respects_pc_count(self) -> None:
+        role_vectors = {
+            "default": torch.tensor([[0.0, 0.0, 0.0]]),
+            "judge": torch.tensor([[1.0, 0.0, 0.0]]),
+            "validator": torch.tensor([[0.0, 1.0, 0.0]]),
+            "spy": torch.tensor([[-1.0, 0.0, 0.0]]),
+            "rogue": torch.tensor([[0.0, -1.0, 0.0]]),
+        }
+        bundle = build_role_axis_bundle(
+            role_vectors=role_vectors,
+            honest_roles=["judge", "validator"],
+            deceptive_roles=["spy", "rogue"],
+            anchor_role="default",
+            layer_specs=["1"],
+            pc_count=8,
+        )
+        self.assertEqual(bundle["pc_count"], 8)
+        self.assertLessEqual(int(bundle["layers"]["1"]["pc_components"].shape[0]), 4)
+
     def test_load_completion_mean_split_and_scores(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             split_dir = Path(tmp_dir) / "Deception-AILiar-completion" / "test"

@@ -10,6 +10,7 @@ from deception_honesty_axis.config import find_repo_root
 
 
 SUPPORTED_ACTIVATION_ROW_TRANSFER_METHODS = {"activation_logistic"}
+SUPPORTED_SOURCE_KINDS = {"activation_rows", "completion_split"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,16 @@ class ActivationRowSourceConfig:
             return None
         path = Path(str(value))
         return path if path.is_absolute() else (self.repo_root / path)
+
+    @property
+    def source_kind(self) -> str:
+        value = self.raw.get("source_kind", "activation_rows")
+        resolved = str(value)
+        if resolved not in SUPPORTED_SOURCE_KINDS:
+            raise ValueError(
+                f"Unsupported source_kind {resolved!r}; expected one of {sorted(SUPPORTED_SOURCE_KINDS)!r}"
+            )
+        return resolved
 
     @property
     def activation_dataset_repo_id(self) -> str | None:
@@ -40,8 +51,16 @@ class ActivationRowSourceConfig:
         return self._resolve_optional_path("activation_jsonl")
 
     @property
+    def split_dir(self) -> Path | None:
+        return self._resolve_optional_path("split_dir")
+
+    @property
     def split(self) -> str:
-        return str(self.raw.get("split", "train"))
+        if "split" in self.raw and self.raw.get("split") not in (None, ""):
+            return str(self.raw["split"])
+        if self.source_kind == "completion_split" and self.split_dir is not None:
+            return str(self.split_dir.name)
+        return "train"
 
     @property
     def group_field(self) -> str:
@@ -55,6 +74,8 @@ class ActivationRowSourceConfig:
         return str(value)
 
     def resolved_load_kwargs(self) -> dict[str, Any]:
+        if self.source_kind != "activation_rows":
+            raise ValueError(f"resolved_load_kwargs is only valid for activation_rows, got {self.source_kind!r}")
         sources = {
             "activation_dataset_repo_id": self.activation_dataset_repo_id,
             "activation_dataset_dir": self.activation_dataset_dir,
@@ -73,10 +94,13 @@ class ActivationRowSourceConfig:
 
     def manifest_row(self) -> dict[str, Any]:
         payload = {
+            "source_kind": self.source_kind,
             "split": self.split,
             "group_field": self.group_field,
             "group_value": self.group_value,
         }
+        if self.split_dir is not None:
+            payload["split_dir"] = str(self.split_dir)
         if self.activation_dataset_repo_id is not None:
             payload["activation_dataset_repo_id"] = self.activation_dataset_repo_id
         if self.activation_dataset_dir is not None:
@@ -102,6 +126,8 @@ class ActivationRowDatasetConfig:
         if isinstance(self.raw.get("source"), dict):
             return dict(self.raw["source"])
         top_level_keys = {
+            "source_kind",
+            "split_dir",
             "activation_dataset_repo_id",
             "activation_dataset_dir",
             "activation_jsonl",
@@ -112,6 +138,13 @@ class ActivationRowDatasetConfig:
         if any(key in self.raw for key in top_level_keys):
             return {key: self.raw[key] for key in top_level_keys if key in self.raw}
         return None
+
+    @property
+    def behavior(self) -> str | None:
+        value = self.raw.get("behavior")
+        if value in (None, ""):
+            return None
+        return str(value)
 
     @property
     def train_source(self) -> ActivationRowSourceConfig:
@@ -148,12 +181,14 @@ class ActivationRowDatasetConfig:
         return train_payload == eval_payload
 
     def manifest_row(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
+            "behavior": self.behavior,
             "uses_shared_source": self.uses_shared_source,
             "train_source": self.train_source.manifest_row(),
             "eval_source": self.eval_source.manifest_row(),
         }
+        return payload
 
 
 @dataclass(frozen=True)

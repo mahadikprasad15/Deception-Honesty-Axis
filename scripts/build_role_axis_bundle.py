@@ -78,6 +78,7 @@ def main() -> None:
             "deceptive_roles": transfer_config.deceptive_roles,
             "anchor_role": transfer_config.anchor_role,
             "layer_specs": transfer_config.layer_specs,
+            "pc_count": transfer_config.pc_count,
             "activation_layer_numbers": activation_layer_numbers,
         },
     )
@@ -89,6 +90,7 @@ def main() -> None:
                 "state": "running",
                 "vectors_loaded": len(role_vectors),
                 "layer_specs_requested": transfer_config.layer_specs,
+                "pc_count": transfer_config.pc_count,
                 "activation_layer_numbers": activation_layer_numbers,
             },
             indent=2,
@@ -108,6 +110,7 @@ def main() -> None:
         anchor_role=transfer_config.anchor_role,
         layer_specs=transfer_config.layer_specs,
         layer_numbers=activation_layer_numbers,
+        pc_count=transfer_config.pc_count,
     )
     artifacts = write_role_axis_bundle(run_root, bundle)
     progress_path.write_text(

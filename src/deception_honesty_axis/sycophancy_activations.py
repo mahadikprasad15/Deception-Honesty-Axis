@@ -98,7 +98,9 @@ def normalize_activation_pooling(value: str | None) -> str | None:
     text = str(value or "").strip().lower().replace("-", "_")
     if not text:
         return None
-    if text in {"response_mean", "mean_response"}:
+    # Activation-row caches and older completion-split caches use different names
+    # for the same operation: mean-pool over completion/response tokens.
+    if text in {"response_mean", "mean_response", "completion_mean", "mean_completion"}:
         return "mean_response"
     if text in {"last_non_pad_token", "last_non_pad", "last_token"}:
         return "last_token"
