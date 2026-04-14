@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from sklearn.decomposition import PCA
 
+from deception_honesty_axis.analysis import infer_activation_layer_numbers
 from deception_honesty_axis.common import ensure_dir, load_jsonl, make_run_id, read_json, slugify, utc_now_iso, write_json
 from deception_honesty_axis.config import ExperimentConfig, corpus_root as resolve_corpus_root, load_config
 from deception_honesty_axis.indexes import load_index
@@ -277,7 +278,7 @@ def question_ids_from_config(config: ExperimentConfig) -> list[str]:
     return [row.question_id for row in rows]
 
 
-def load_selected_role_question_records(context: AnalysisContext) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def load_selected_role_question_records(context: AnalysisContext) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[int]]:
     corpus_path = resolve_corpus_root(context.experiment_config)
     work_units = build_work_units(context.experiment_config.repo_root, context.experiment_config)
     item_meta = {unit["item_id"]: unit for unit in work_units}
@@ -318,15 +319,15 @@ def load_selected_role_question_records(context: AnalysisContext) -> tuple[dict[
         else:
             role_question_sum[key] = pooled.clone()
             role_question_count[key] = 1
-    return role_question_sum, role_question_count, item_meta
+    return role_question_sum, role_question_count, item_meta, infer_activation_layer_numbers(records)
 
 
 def build_selected_bundle_and_vectors(
     context: AnalysisContext,
 ) -> tuple[dict[str, Any], dict[str, Any], Any]:
-    role_question_sum, role_question_count, _ = load_selected_role_question_records(context)
+    role_question_sum, role_question_count, _, activation_layer_numbers = load_selected_role_question_records(context)
     example_tensor = next(iter(role_question_sum.values()))
-    resolved_spec = resolve_layer_specs(int(example_tensor.shape[0]), [context.layer_spec])[0]
+    resolved_spec = resolve_layer_specs(int(example_tensor.shape[0]), [context.layer_spec], activation_layer_numbers)[0]
     needed_roles = [context.transfer_config.anchor_role, *context.selected_honest_roles, *context.selected_deceptive_roles]
 
     role_vectors: dict[str, Any] = {}
@@ -352,6 +353,7 @@ def build_selected_bundle_and_vectors(
         deceptive_roles=context.selected_deceptive_roles,
         anchor_role=context.transfer_config.anchor_role,
         layer_specs=[resolved_spec.key],
+        layer_numbers=activation_layer_numbers,
     )
     return bundle, role_vectors, resolved_spec
 

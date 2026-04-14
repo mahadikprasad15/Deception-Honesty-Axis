@@ -1,0 +1,29 @@
+{
+  "name": "quality-axis-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "fixer",
+    "false_alibist",
+    "chameleon",
+    "con_artist",
+    "fabricator",
+    "witness",
+    "forensic_analyst",
+    "fact_checker",
+    "archivist",
+    "testimony_officer"
+  ],
+  "roles": [
+    {"name": "default", "source": "default.json", "anchor_only": true, "axis_id": "quality", "role_side": "anchor"},
+    {"name": "fixer", "source": "quality_fixer.json", "anchor_only": false, "axis_id": "quality", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "false_alibist", "source": "quality_false_alibist.json", "anchor_only": false, "axis_id": "quality", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "chameleon", "source": "quality_chameleon.json", "anchor_only": false, "axis_id": "quality", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "con_artist", "source": "quality_con_artist.json", "anchor_only": false, "axis_id": "quality", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "fabricator", "source": "quality_fabricator.json", "anchor_only": false, "axis_id": "quality", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "witness", "source": "quality_witness.json", "anchor_only": false, "axis_id": "quality", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "forensic_analyst", "source": "quality_forensic_analyst.json", "anchor_only": false, "axis_id": "quality", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "fact_checker", "source": "quality_fact_checker.json", "anchor_only": false, "axis_id": "quality", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "archivist", "source": "quality_archivist.json", "anchor_only": false, "axis_id": "quality", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "testimony_officer", "source": "quality_testimony_officer.json", "anchor_only": false, "axis_id": "quality", "role_side": "honest", "trigger_mode": "always_on"}
+  ]
+}

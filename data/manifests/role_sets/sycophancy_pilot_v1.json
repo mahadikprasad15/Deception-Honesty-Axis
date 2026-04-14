@@ -1,0 +1,84 @@
+{
+  "name": "sycophancy-pilot-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "yes_man",
+    "flatterer",
+    "people_pleaser",
+    "cheerleader",
+    "enabler",
+    "critic",
+    "skeptic",
+    "contrarian",
+    "blunt_advisor",
+    "tough_love_mentor"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true,
+      "side": "anchor"
+    },
+    {
+      "name": "yes_man",
+      "source": "yes_man.json",
+      "anchor_only": false,
+      "side": "sycophantic"
+    },
+    {
+      "name": "flatterer",
+      "source": "flatterer.json",
+      "anchor_only": false,
+      "side": "sycophantic"
+    },
+    {
+      "name": "people_pleaser",
+      "source": "people_pleaser.json",
+      "anchor_only": false,
+      "side": "sycophantic"
+    },
+    {
+      "name": "cheerleader",
+      "source": "cheerleader.json",
+      "anchor_only": false,
+      "side": "sycophantic"
+    },
+    {
+      "name": "enabler",
+      "source": "enabler.json",
+      "anchor_only": false,
+      "side": "sycophantic"
+    },
+    {
+      "name": "critic",
+      "source": "critic.json",
+      "anchor_only": false,
+      "side": "non_sycophantic"
+    },
+    {
+      "name": "skeptic",
+      "source": "skeptic.json",
+      "anchor_only": false,
+      "side": "non_sycophantic"
+    },
+    {
+      "name": "contrarian",
+      "source": "contrarian.json",
+      "anchor_only": false,
+      "side": "non_sycophantic"
+    },
+    {
+      "name": "blunt_advisor",
+      "source": "blunt_advisor.json",
+      "anchor_only": false,
+      "side": "non_sycophantic"
+    },
+    {
+      "name": "tough_love_mentor",
+      "source": "tough_love_mentor.json",
+      "anchor_only": false,
+      "side": "non_sycophantic"
+    }
+  ]
+}

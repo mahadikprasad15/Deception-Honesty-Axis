@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from deception_honesty_axis.common import make_run_id
+from deception_honesty_axis.common import make_run_id, read_json
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 from deception_honesty_axis.role_axis_transfer import build_role_axis_bundle, write_role_axis_bundle
 from deception_honesty_axis.transfer_config import load_transfer_config
@@ -63,6 +63,11 @@ def main() -> None:
     import torch
 
     role_vectors = torch.load(vectors_run_dir / "results" / "role_vectors.pt", map_location="cpu")
+    role_vectors_meta_path = vectors_run_dir / "results" / "role_vectors_meta.json"
+    activation_layer_numbers = None
+    if role_vectors_meta_path.exists():
+        raw_layer_numbers = read_json(role_vectors_meta_path).get("activation_layer_numbers", [])
+        activation_layer_numbers = [int(layer_number) for layer_number in raw_layer_numbers] or None
     write_analysis_manifest(
         run_root,
         {
@@ -73,6 +78,8 @@ def main() -> None:
             "deceptive_roles": transfer_config.deceptive_roles,
             "anchor_role": transfer_config.anchor_role,
             "layer_specs": transfer_config.layer_specs,
+            "pc_count": transfer_config.pc_count,
+            "activation_layer_numbers": activation_layer_numbers,
         },
     )
     write_stage_status(run_root, "build_role_axis_bundle", "running", {"role_count": len(role_vectors)})
@@ -83,6 +90,8 @@ def main() -> None:
                 "state": "running",
                 "vectors_loaded": len(role_vectors),
                 "layer_specs_requested": transfer_config.layer_specs,
+                "pc_count": transfer_config.pc_count,
+                "activation_layer_numbers": activation_layer_numbers,
             },
             indent=2,
         )
@@ -100,6 +109,8 @@ def main() -> None:
         deceptive_roles=transfer_config.deceptive_roles,
         anchor_role=transfer_config.anchor_role,
         layer_specs=transfer_config.layer_specs,
+        layer_numbers=activation_layer_numbers,
+        pc_count=transfer_config.pc_count,
     )
     artifacts = write_role_axis_bundle(run_root, bundle)
     progress_path.write_text(

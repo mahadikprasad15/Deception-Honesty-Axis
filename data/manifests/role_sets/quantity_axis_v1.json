@@ -1,0 +1,29 @@
+{
+  "name": "quantity-axis-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "handler",
+    "broker",
+    "impression_manager",
+    "coverup_operator",
+    "gatekeeper",
+    "ombudsman",
+    "transparency_officer",
+    "disclosure_counsel",
+    "whistleblower",
+    "documentarian"
+  ],
+  "roles": [
+    {"name": "default", "source": "default.json", "anchor_only": true, "axis_id": "quantity", "role_side": "anchor"},
+    {"name": "handler", "source": "quantity_handler.json", "anchor_only": false, "axis_id": "quantity", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "broker", "source": "quantity_broker.json", "anchor_only": false, "axis_id": "quantity", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "impression_manager", "source": "quantity_impression_manager.json", "anchor_only": false, "axis_id": "quantity", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "coverup_operator", "source": "quantity_coverup_operator.json", "anchor_only": false, "axis_id": "quantity", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "gatekeeper", "source": "quantity_gatekeeper.json", "anchor_only": false, "axis_id": "quantity", "role_side": "deceptive", "trigger_mode": "always_on"},
+    {"name": "ombudsman", "source": "quantity_ombudsman.json", "anchor_only": false, "axis_id": "quantity", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "transparency_officer", "source": "quantity_transparency_officer.json", "anchor_only": false, "axis_id": "quantity", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "disclosure_counsel", "source": "quantity_disclosure_counsel.json", "anchor_only": false, "axis_id": "quantity", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "whistleblower", "source": "quantity_whistleblower.json", "anchor_only": false, "axis_id": "quantity", "role_side": "honest", "trigger_mode": "always_on"},
+    {"name": "documentarian", "source": "quantity_documentarian.json", "anchor_only": false, "axis_id": "quantity", "role_side": "honest", "trigger_mode": "always_on"}
+  ]
+}

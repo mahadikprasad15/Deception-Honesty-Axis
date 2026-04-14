@@ -27,6 +27,11 @@ DATASET_LABELS = {
     "Deception-InsiderTrading-SallyConcat-completion": "Insider",
     "Deception-Mask-completion": "Mask",
     "Deception-Roleplaying-completion": "Roleplay",
+    "Sycophancy Dataset": "Sycophancy Dataset",
+    "Open-Ended Sycophancy": "Open-Ended Sycophancy",
+    "OEQ Validation": "OEQ Validation",
+    "OEQ Indirectness": "OEQ Indirectness",
+    "OEQ Framing": "OEQ Framing",
     ZERO_SHOT_SOURCE: "ZeroShot",
 }
 
@@ -54,13 +59,26 @@ class ResolvedLayerSpec:
     key: str
     label: str
     layer_indices: tuple[int, ...]
+    layer_numbers: tuple[int, ...]
 
     def to_manifest(self) -> dict[str, Any]:
         return {
             "layer_spec": self.key,
             "layer_label": self.label,
             "layer_indices": list(self.layer_indices),
+            "layer_numbers": list(self.layer_numbers),
         }
+
+    def indices_for_tensor(self, layer_count: int) -> tuple[int, ...]:
+        original_layer_indices = tuple(layer_number - 1 for layer_number in self.layer_numbers)
+        if all(0 <= layer_index < layer_count for layer_index in original_layer_indices):
+            return original_layer_indices
+        if all(0 <= layer_index < layer_count for layer_index in self.layer_indices):
+            return self.layer_indices
+        raise ValueError(
+            f"Layer spec {self.key} cannot be applied to tensor with {layer_count} layers; "
+            f"original layer numbers={self.layer_numbers}, stored indices={self.layer_indices}"
+        )
 
 
 @dataclass(frozen=True)
@@ -72,7 +90,20 @@ class CachedSplitFeatures:
     features_by_spec: dict[str, np.ndarray]
 
 
-def resolve_layer_specs(layer_count: int, raw_specs: list[str]) -> list[ResolvedLayerSpec]:
+def resolve_layer_specs(
+    layer_count: int,
+    raw_specs: list[str],
+    layer_numbers: list[int] | None = None,
+) -> list[ResolvedLayerSpec]:
+    available_layer_numbers = layer_numbers or list(range(1, layer_count + 1))
+    if len(available_layer_numbers) != layer_count:
+        raise ValueError(
+            f"layer_numbers has {len(available_layer_numbers)} entries, but stored layer_count is {layer_count}"
+        )
+    layer_index_by_number = {
+        int(layer_number): layer_index
+        for layer_index, layer_number in enumerate(available_layer_numbers)
+    }
     resolved: list[ResolvedLayerSpec] = []
     seen: set[str] = set()
     for raw_spec in raw_specs:
@@ -87,6 +118,7 @@ def resolve_layer_specs(layer_count: int, raw_specs: list[str]) -> list[Resolved
                     key="last4_mean",
                     label="Last4Mean",
                     layer_indices=tuple(range(layer_count - 4, layer_count)),
+                    layer_numbers=tuple(available_layer_numbers[-4:]),
                 )
             )
             seen.add(token)
@@ -95,14 +127,17 @@ def resolve_layer_specs(layer_count: int, raw_specs: list[str]) -> list[Resolved
         if not token.isdigit():
             raise ValueError(f"Unsupported layer spec: {raw_spec}")
         layer_number = int(token)
-        if layer_number < 1 or layer_number > layer_count:
-            raise ValueError(f"Layer spec {layer_number} is out of range for {layer_count} layers")
-        zero_index = layer_number - 1
+        if layer_number not in layer_index_by_number:
+            raise ValueError(
+                f"Layer spec {layer_number} is unavailable for stored activation layers {available_layer_numbers}"
+            )
+        zero_index = layer_index_by_number[layer_number]
         resolved.append(
             ResolvedLayerSpec(
                 key=str(layer_number),
                 label=f"L{layer_number}",
                 layer_indices=(zero_index,),
+                layer_numbers=(layer_number,),
             )
         )
         seen.add(token)
@@ -144,6 +179,8 @@ def build_role_axis_bundle(
     deceptive_roles: list[str],
     anchor_role: str,
     layer_specs: list[str],
+    layer_numbers: list[int] | None = None,
+    pc_count: int = 3,
 ) -> dict[str, Any]:
     import torch
 
@@ -153,9 +190,13 @@ def build_role_axis_bundle(
         if role_name not in role_vectors:
             raise KeyError(f"Missing role '{role_name}' in role vectors")
 
+    if pc_count < 1:
+        raise ValueError(f"pc_count must be positive, got {pc_count}")
+
     comparison_roles = list(deceptive_roles) + list(honest_roles)
     layer_count = int(next(iter(role_vectors.values())).shape[0])
-    resolved_specs = resolve_layer_specs(layer_count, layer_specs)
+    activation_layer_numbers = layer_numbers or list(range(1, layer_count + 1))
+    resolved_specs = resolve_layer_specs(layer_count, layer_specs, activation_layer_numbers)
     bundle_layers: dict[str, dict[str, Any]] = {}
     summary_rows: list[dict[str, Any]] = []
 
@@ -168,7 +209,7 @@ def build_role_axis_bundle(
         deceptive_mean = torch.stack([layer_role_vectors[name] for name in deceptive_roles], dim=0).mean(dim=0)
         contrast_axis = _normalize(honest_mean - deceptive_mean)
         pca = run_centered_pca(layer_role_vectors, comparison_roles)
-        components = _top_components(pca["components"])
+        components = _top_components(pca["components"], pc_count)
         pc_signs = [1.0] * int(components.shape[0])
 
         centered_honest = honest_mean - pca["mean_vector"]
@@ -192,6 +233,7 @@ def build_role_axis_bundle(
             "layer_spec": spec.key,
             "layer_label": spec.label,
             "layer_indices": list(spec.layer_indices),
+            "layer_numbers": list(spec.layer_numbers),
             "contrast_axis": contrast_axis,
             "honest_mean": honest_mean.to(torch.float32),
             "deceptive_mean": deceptive_mean.to(torch.float32),
@@ -211,6 +253,7 @@ def build_role_axis_bundle(
                 "layer_spec": spec.key,
                 "layer_label": spec.label,
                 "layer_indices": ",".join(str(idx) for idx in spec.layer_indices),
+                "layer_numbers": ",".join(str(layer_number) for layer_number in spec.layer_numbers),
                 "pc1_explained_variance_ratio": pca["explained_variance_ratio"][0] if pca["explained_variance_ratio"] else None,
                 "pc2_explained_variance_ratio": pca["explained_variance_ratio"][1] if len(pca["explained_variance_ratio"]) > 1 else None,
                 "pc3_explained_variance_ratio": pca["explained_variance_ratio"][2] if len(pca["explained_variance_ratio"]) > 2 else None,
@@ -228,7 +271,9 @@ def build_role_axis_bundle(
         "honest_roles": list(honest_roles),
         "deceptive_roles": list(deceptive_roles),
         "comparison_roles": comparison_roles,
+        "pc_count": int(pc_count),
         "layer_count": layer_count,
+        "activation_layer_numbers": activation_layer_numbers,
         "resolved_layer_specs": [spec.to_manifest() for spec in resolved_specs],
         "layers": bundle_layers,
         "summary_rows": summary_rows,
@@ -261,6 +306,7 @@ def write_role_axis_bundle(run_root: Path, bundle: dict[str, Any]) -> dict[str, 
             "layer_spec",
             "layer_label",
             "layer_indices",
+            "layer_numbers",
             "pc1_explained_variance_ratio",
             "pc2_explained_variance_ratio",
             "pc3_explained_variance_ratio",
@@ -351,7 +397,7 @@ def _pool_completion_mean_for_spec(
             end = max(start + 1, min(end, tensor_len))
 
     pooled_layers: list[torch.Tensor] = []
-    for layer_index in spec.layer_indices:
+    for layer_index in spec.indices_for_tensor(int(tensor.shape[0])):
         if layer_index >= int(tensor.shape[0]):
             raise ValueError(f"Layer index {layer_index} out of range for sample {row.get('id')}")
         pooled_layers.append(tensor[layer_index, start:end, :].mean(dim=0))

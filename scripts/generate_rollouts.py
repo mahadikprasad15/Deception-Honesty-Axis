@@ -118,6 +118,7 @@ def main() -> None:
                 {
                     "item_id": unit["item_id"],
                     "role": unit["role"],
+                    "role_source": unit.get("role_source"),
                     "question_id": unit["question_id"],
                     "prompt_id": unit["prompt_id"],
                 }

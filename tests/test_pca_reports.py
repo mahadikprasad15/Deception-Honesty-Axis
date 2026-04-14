@@ -66,6 +66,34 @@ class PcaReportsTest(unittest.TestCase):
             self.assertEqual(layer0_pc3["default_abs_rank"], "3")
             self.assertEqual(layer0_pc2["contrast_abs_rank"], "1")
 
+    def test_write_pca_report_artifacts_uses_original_layer_numbers_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            run_root = Path(tmp_dir)
+            layers = [
+                {
+                    "layer": 0,
+                    "layer_number": 14,
+                    "layer_label": "L14",
+                    "explained_variance_ratio": [0.5, 0.3, 0.2],
+                    "role_projections": {
+                        "yes_man": [1.0, 2.0, 3.0],
+                        "critic": [-1.0, -2.0, -3.0],
+                    },
+                    "anchor_projection": [0.4, -0.2, 0.1],
+                    "contrast_pc_cosines": [0.1, -0.8, 0.2],
+                }
+            ]
+
+            write_pca_report_artifacts(run_root, layers, "default", ["yes_man", "critic"])
+
+            self.assertTrue((run_root / "results" / "plots" / "pc1_pc2__L14.png").exists())
+            self.assertFalse((run_root / "results" / "plots" / "pc1_pc2__L7.png").exists())
+            with (run_root / "results" / "tables" / "pc_rankings.csv").open("r", encoding="utf-8", newline="") as handle:
+                ranking_rows = list(csv.DictReader(handle))
+            self.assertEqual(ranking_rows[0]["layer"], "0")
+            self.assertEqual(ranking_rows[0]["layer_number"], "14")
+            self.assertEqual(ranking_rows[0]["layer_label"], "L14")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from deception_honesty_axis.config import ExperimentConfig
+from deception_honesty_axis.config import ExperimentConfig, load_config
 from deception_honesty_axis.work_units import anchor_role, build_work_units, expand_work_units, load_role_prompts, pca_roles
 
 
@@ -99,6 +99,31 @@ class WorkUnitsTest(unittest.TestCase):
 
             prompts = load_role_prompts(role_path)
             self.assertEqual(prompts, ["You are an AI assistant.", "Respond as yourself."])
+
+    def test_sycophancy_pilot_config_expands_expected_work_units(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        config = load_config(repo_root / "configs" / "experiments" / "sycophancy_pilot_v1_llama32_3b.json")
+        units = build_work_units(config.repo_root, config)
+        roles = {unit["role"] for unit in units}
+
+        self.assertEqual(config.activation_layer_numbers, [14])
+        self.assertEqual(len(units), 11 * 2 * 12)
+        self.assertEqual(
+            roles,
+            {
+                "default",
+                "yes_man",
+                "flatterer",
+                "people_pleaser",
+                "cheerleader",
+                "enabler",
+                "critic",
+                "skeptic",
+                "contrarian",
+                "blunt_advisor",
+                "tough_love_mentor",
+            },
+        )
 
 
 if __name__ == "__main__":

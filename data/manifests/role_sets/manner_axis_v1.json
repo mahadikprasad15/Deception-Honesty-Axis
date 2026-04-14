@@ -1,0 +1,29 @@
+{
+  "name": "manner-axis-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "credibility_gamer",
+    "plausible_denier",
+    "face_saver",
+    "careful_spokesperson",
+    "elastic_commitment_writer",
+    "precise_analyst",
+    "plain_language_officer",
+    "technical_writer",
+    "logician",
+    "evidence_examiner"
+  ],
+  "roles": [
+    {"name": "default", "source": "default.json", "anchor_only": true, "axis_id": "manner", "role_side": "anchor"},
+    {"name": "credibility_gamer", "source": "manner_credibility_gamer.json", "anchor_only": false, "axis_id": "manner", "role_side": "deceptive", "trigger_mode": "commitment_triggered"},
+    {"name": "plausible_denier", "source": "manner_plausible_denier.json", "anchor_only": false, "axis_id": "manner", "role_side": "deceptive", "trigger_mode": "commitment_triggered"},
+    {"name": "face_saver", "source": "manner_face_saver.json", "anchor_only": false, "axis_id": "manner", "role_side": "deceptive", "trigger_mode": "commitment_triggered"},
+    {"name": "careful_spokesperson", "source": "manner_careful_spokesperson.json", "anchor_only": false, "axis_id": "manner", "role_side": "deceptive", "trigger_mode": "commitment_triggered"},
+    {"name": "elastic_commitment_writer", "source": "manner_elastic_commitment_writer.json", "anchor_only": false, "axis_id": "manner", "role_side": "deceptive", "trigger_mode": "commitment_triggered"},
+    {"name": "precise_analyst", "source": "manner_precise_analyst.json", "anchor_only": false, "axis_id": "manner", "role_side": "honest", "trigger_mode": "commitment_triggered"},
+    {"name": "plain_language_officer", "source": "manner_plain_language_officer.json", "anchor_only": false, "axis_id": "manner", "role_side": "honest", "trigger_mode": "commitment_triggered"},
+    {"name": "technical_writer", "source": "manner_technical_writer.json", "anchor_only": false, "axis_id": "manner", "role_side": "honest", "trigger_mode": "commitment_triggered"},
+    {"name": "logician", "source": "manner_logician.json", "anchor_only": false, "axis_id": "manner", "role_side": "honest", "trigger_mode": "commitment_triggered"},
+    {"name": "evidence_examiner", "source": "manner_evidence_examiner.json", "anchor_only": false, "axis_id": "manner", "role_side": "honest", "trigger_mode": "commitment_triggered"}
+  ]
+}

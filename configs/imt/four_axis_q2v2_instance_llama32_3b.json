@@ -1,0 +1,80 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts"
+  },
+  "source_bank": {
+    "name": "four-axis-q2v2",
+    "sources": [
+      {
+        "axis_name": "quality",
+        "experiment_config": "configs/experiments/quality_axis_v1_llama32_3b.json",
+        "analysis_run_id": "four-axis-20260409T120313Z"
+      },
+      {
+        "axis_name": "quantity",
+        "experiment_config": "configs/experiments/quantity_axis_v2_llama32_3b.json",
+        "analysis_run_id": ""
+      },
+      {
+        "axis_name": "relation",
+        "experiment_config": "configs/experiments/relation_axis_v1_llama32_3b.json",
+        "analysis_run_id": "four-axis-20260409T120313Z"
+      },
+      {
+        "axis_name": "manner",
+        "experiment_config": "configs/experiments/manner_axis_v1_llama32_3b.json",
+        "analysis_run_id": "four-axis-20260409T120313Z"
+      }
+    ]
+  },
+  "scoring": {
+    "model": {
+      "id": "meta-llama/Llama-3.2-3B-Instruct",
+      "dtype": "float16",
+      "device": "auto",
+      "generation": {
+        "max_new_tokens": 256,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "do_sample": false
+      }
+    },
+    "templates": [
+      "rubric_first",
+      "responsiveness_emphasis",
+      "listener_misled_mechanism"
+    ],
+    "reuse_from": {
+      "imt_config": "configs/imt/four_axis_v1_instance_llama32_3b.json",
+      "run_id": "${IMT_V1_RUN_ID}",
+      "bank_axes": [
+        "quality",
+        "relation",
+        "manner"
+      ]
+    },
+    "role_instruction_max_chars": 320
+  },
+  "fit": {
+    "granularity": "instance",
+    "layer": 14,
+    "pca_components": 8,
+    "ridge_alpha": 1.0
+  },
+  "target": {
+    "activations_root": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Llama-3.2-3B-Instruct",
+    "datasets": [
+      "Deception-AILiar-completion",
+      "Deception-ConvincingGame-completion",
+      "Deception-HarmPressureChoice-completion",
+      "Deception-InstructedDeception-completion",
+      "Deception-Mask-completion",
+      "Deception-Roleplaying-completion"
+    ],
+    "eval_split": "test",
+    "pooling": "completion_mean"
+  }
+}

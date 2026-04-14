@@ -1,0 +1,29 @@
+{
+  "name": "relation-axis-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "spin_doctor",
+    "narrative_manager",
+    "smooth_evader",
+    "excuse_maker",
+    "parasite",
+    "cross_examiner",
+    "straight_reporter",
+    "question_tracker",
+    "accountability_officer",
+    "auditor"
+  ],
+  "roles": [
+    {"name": "default", "source": "default.json", "anchor_only": true, "axis_id": "relation", "role_side": "anchor"},
+    {"name": "spin_doctor", "source": "relation_spin_doctor.json", "anchor_only": false, "axis_id": "relation", "role_side": "deceptive", "trigger_mode": "pressure_triggered"},
+    {"name": "narrative_manager", "source": "relation_narrative_manager.json", "anchor_only": false, "axis_id": "relation", "role_side": "deceptive", "trigger_mode": "pressure_triggered"},
+    {"name": "smooth_evader", "source": "relation_smooth_evader.json", "anchor_only": false, "axis_id": "relation", "role_side": "deceptive", "trigger_mode": "pressure_triggered"},
+    {"name": "excuse_maker", "source": "relation_excuse_maker.json", "anchor_only": false, "axis_id": "relation", "role_side": "deceptive", "trigger_mode": "pressure_triggered"},
+    {"name": "parasite", "source": "relation_parasite.json", "anchor_only": false, "axis_id": "relation", "role_side": "deceptive", "trigger_mode": "pressure_triggered"},
+    {"name": "cross_examiner", "source": "relation_cross_examiner.json", "anchor_only": false, "axis_id": "relation", "role_side": "honest", "trigger_mode": "pressure_triggered"},
+    {"name": "straight_reporter", "source": "relation_straight_reporter.json", "anchor_only": false, "axis_id": "relation", "role_side": "honest", "trigger_mode": "pressure_triggered"},
+    {"name": "question_tracker", "source": "relation_question_tracker.json", "anchor_only": false, "axis_id": "relation", "role_side": "honest", "trigger_mode": "pressure_triggered"},
+    {"name": "accountability_officer", "source": "relation_accountability_officer.json", "anchor_only": false, "axis_id": "relation", "role_side": "honest", "trigger_mode": "pressure_triggered"},
+    {"name": "auditor", "source": "relation_auditor.json", "anchor_only": false, "axis_id": "relation", "role_side": "honest", "trigger_mode": "pressure_triggered"}
+  ]
+}

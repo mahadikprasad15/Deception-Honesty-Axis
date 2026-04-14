@@ -42,6 +42,10 @@ class RoleAxisTransferConfig:
         return [str(item) for item in self.raw["role_axis"]["layer_specs"]]
 
     @property
+    def pc_count(self) -> int:
+        return int(self.raw["role_axis"].get("pc_count", 3))
+
+    @property
     def honest_roles(self) -> list[str]:
         return [str(item) for item in self.raw["role_axis"]["honest_roles"]]
 

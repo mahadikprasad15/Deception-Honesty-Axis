@@ -11,6 +11,7 @@ data/questions/*.jsonl
 !data/questions/synthetic_pilot_v1_questions.jsonl
 !data/questions/synthetic_v1_pruned_questions.jsonl
 !data/questions/synthetic_v2_orthogonal_questions.jsonl
+!data/questions/sycophancy_pilot_v1_questions.jsonl
 data/roles/instructions/*.json
 !data/roles/instructions/default.json
 !data/roles/instructions/spin_doctor.json
@@ -54,4 +55,14 @@ data/roles/instructions/*.json
 !data/roles/instructions/perception_manager.json
 !data/roles/instructions/record_shaper.json
 !data/roles/instructions/compliance_gamer.json
+!data/roles/instructions/yes_man.json
+!data/roles/instructions/flatterer.json
+!data/roles/instructions/people_pleaser.json
+!data/roles/instructions/cheerleader.json
+!data/roles/instructions/enabler.json
+!data/roles/instructions/critic.json
+!data/roles/instructions/skeptic.json
+!data/roles/instructions/contrarian.json
+!data/roles/instructions/blunt_advisor.json
+!data/roles/instructions/tough_love_mentor.json
 !data/manifests/

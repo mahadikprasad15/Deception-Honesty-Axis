@@ -1,0 +1,24 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "axis_variant": "raw",
+  "dataset_order": [
+    "Deception-AILiar-completion",
+    "Deception-ConvincingGame-completion",
+    "Deception-HarmPressureChoice-completion",
+    "Deception-InstructedDeception-completion",
+    "Deception-Mask-completion",
+    "Deception-Roleplaying-completion"
+  ],
+  "variants": [
+    {
+      "label": "four-axis-v1",
+      "imt_run_dir": "artifacts/runs/imt-recovery/meta-llama-llama-3-2-3b-instruct/assistant-axis/four-axis-v1/SET_V1_RUN_ID"
+    },
+    {
+      "label": "four-axis-q2v2",
+      "imt_run_dir": "artifacts/runs/imt-recovery/meta-llama-llama-3-2-3b-instruct/assistant-axis/four-axis-q2v2/SET_Q2V2_RUN_ID"
+    }
+  ]
+}
