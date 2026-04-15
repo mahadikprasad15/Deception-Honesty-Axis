@@ -75,6 +75,13 @@ def resolve_axis_layer_bundle(
             layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
             if len(layer_numbers) == 1 and int(layer_numbers[0]) == int(expected_layer_number):
                 matches.append(layer_spec)
+                continue
+            try:
+                parsed_layer_spec = int(str(layer_spec))
+            except (TypeError, ValueError):
+                parsed_layer_spec = None
+            if parsed_layer_spec is not None and parsed_layer_spec == int(expected_layer_number):
+                matches.append(layer_spec)
         if not matches:
             raise ValueError(
                 f"No axis bundle layers match expected layer {expected_layer_number}; "

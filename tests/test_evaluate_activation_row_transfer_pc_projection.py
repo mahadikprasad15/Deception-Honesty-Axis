@@ -52,6 +52,20 @@ class ActivationRowProjectionTransferHelperTest(unittest.TestCase):
         )
         self.assertEqual(indices, [1, 2])
 
+    def test_resolve_axis_layer_bundle_falls_back_to_layer_spec_when_layer_numbers_missing(self) -> None:
+        layer_bundle = {
+            "contrast_axis": torch.zeros(3, dtype=torch.float32),
+            "pca_mean": torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32),
+            "pc_components": torch.eye(3, dtype=torch.float32),
+        }
+        axis_bundle = {"layers": {"14": dict(layer_bundle)}}
+
+        layer_spec, layer_label, resolved_bundle = resolve_axis_layer_bundle(axis_bundle, expected_layer_number=14)
+
+        self.assertEqual(layer_spec, "14")
+        self.assertEqual(layer_label, "14")
+        self.assertEqual(tuple(resolved_bundle["pc_components"].shape), (3, 3))
+
 
 class EvaluateActivationRowTransferPCProjectionScriptTest(unittest.TestCase):
     def test_projected_transfer_runs_and_resumes(self) -> None:
