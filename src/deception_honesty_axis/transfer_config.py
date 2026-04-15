@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deception_honesty_axis.common import ensure_dir
+from deception_honesty_axis.common import ensure_dir, slugify
 from deception_honesty_axis.config import find_repo_root, load_config
 
 
@@ -44,6 +44,19 @@ class RoleAxisTransferConfig:
     @property
     def pc_count(self) -> int:
         return int(self.raw["role_axis"].get("pc_count", 3))
+
+    @property
+    def bundle_name(self) -> str | None:
+        value = self.raw["role_axis"].get("bundle_name")
+        if value in (None, ""):
+            return None
+        return str(value)
+
+    @property
+    def bundle_slug(self) -> str:
+        if self.bundle_name:
+            return slugify(self.bundle_name)
+        return self.role_experiment_config.role_set_slug
 
     @property
     def honest_roles(self) -> list[str]:

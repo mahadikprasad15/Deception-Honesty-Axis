@@ -112,6 +112,12 @@ def infer_axis_slug(axis_bundle_dir: Path) -> str:
     manifest_path = axis_bundle_dir / "meta" / "run_manifest.json"
     if manifest_path.exists():
         manifest = read_json(manifest_path)
+        bundle_name = manifest.get("bundle_name")
+        bundle_slug = manifest.get("bundle_slug")
+        if bundle_name:
+            return slugify(f"{bundle_name}-pc-sweep")
+        if bundle_slug:
+            return slugify(f"{bundle_slug}-pc-sweep")
         axis_name = manifest.get("axis_name")
         variant_name = manifest.get("variant_name")
         if axis_name and variant_name:
