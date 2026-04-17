@@ -1,0 +1,53 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts"
+  },
+  "role_axis": {
+    "bundle_name": "quantity-goal-method-pilot-v1-cumulative-pc-sweep",
+    "experiment_config": "configs/experiments/quantity_goal_method_pilot_v1_llama32_3b.json",
+    "anchor_role": "default",
+    "honest_roles": [
+      "self_protection_accountable",
+      "belief_control_transparent",
+      "identity_management_authentic",
+      "other_protection_compassionate_honest"
+    ],
+    "deceptive_roles": [
+      "self_protection_deceptive",
+      "belief_control_deceptive",
+      "identity_management_deceptive",
+      "other_protection_deceptive"
+    ],
+    "layer_specs": [
+      "14"
+    ],
+    "pc_count": 8
+  },
+  "target": {
+    "activations_root": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Llama-3.2-3B-Instruct",
+    "datasets": [
+      "Deception-AILiar-completion",
+      "Deception-ConvincingGame-completion",
+      "Deception-HarmPressureChoice-completion",
+      "Deception-InstructedDeception-completion",
+      "Deception-Mask-completion",
+      "Deception-Roleplaying-completion"
+    ],
+    "source_split": "train",
+    "eval_split": "test",
+    "pooling": "mean_response"
+  },
+  "evaluation": {
+    "methods": [
+      "contrast_zero_shot",
+      "pc1_zero_shot",
+      "pc2_zero_shot",
+      "pc3_zero_shot"
+    ],
+    "logistic_max_iter": 1000,
+    "random_seed": 42
+  }
+}

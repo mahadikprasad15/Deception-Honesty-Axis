@@ -12,6 +12,7 @@ data/questions/*.jsonl
 !data/questions/synthetic_v1_pruned_questions.jsonl
 !data/questions/synthetic_v2_orthogonal_questions.jsonl
 !data/questions/sycophancy_pilot_v1_questions.jsonl
+!data/questions/quantity_goal_method_pilot_v1_questions.jsonl
 data/roles/instructions/*.json
 !data/roles/instructions/goal_*.json
 !data/roles/instructions/default.json

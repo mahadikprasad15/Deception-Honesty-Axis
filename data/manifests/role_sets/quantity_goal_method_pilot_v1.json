@@ -1,0 +1,88 @@
+{
+  "name": "quantity-goal-method-pilot-v1",
+  "description": "Concretized quantity-axis goal-method set with four matched deceptive-vs-honest categories. Designed to test belief-gap and completeness-gap behavior under stronger disclosure-pressure scenarios.",
+  "anchor_role": "default",
+  "pca_roles": [
+    "self_protection_deceptive",
+    "self_protection_accountable",
+    "belief_control_deceptive",
+    "belief_control_transparent",
+    "identity_management_deceptive",
+    "identity_management_authentic",
+    "other_protection_deceptive",
+    "other_protection_compassionate_honest"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true,
+      "family": "baseline",
+      "goal_side": "neutral"
+    },
+    {
+      "name": "self_protection_deceptive",
+      "source": "goal_self_protection_deceptive.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "self_protection",
+      "goal_side": "deceptive"
+    },
+    {
+      "name": "self_protection_accountable",
+      "source": "goal_self_protection_accountable.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "self_protection",
+      "goal_side": "honest"
+    },
+    {
+      "name": "belief_control_deceptive",
+      "source": "goal_belief_control_deceptive.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "belief_control",
+      "goal_side": "deceptive"
+    },
+    {
+      "name": "belief_control_transparent",
+      "source": "goal_belief_control_transparent.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "belief_control",
+      "goal_side": "honest"
+    },
+    {
+      "name": "identity_management_deceptive",
+      "source": "goal_identity_management_deceptive.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "identity_management",
+      "goal_side": "deceptive"
+    },
+    {
+      "name": "identity_management_authentic",
+      "source": "goal_identity_management_authentic.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "identity_management",
+      "goal_side": "honest"
+    },
+    {
+      "name": "other_protection_deceptive",
+      "source": "goal_other_protection_deceptive.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "other_protection",
+      "goal_side": "deceptive"
+    },
+    {
+      "name": "other_protection_compassionate_honest",
+      "source": "goal_other_protection_compassionate_honest.json",
+      "anchor_only": false,
+      "family": "goal_method",
+      "category": "other_protection",
+      "goal_side": "honest"
+    }
+  ]
+}
