@@ -1,0 +1,49 @@
+{
+  "experiment_name": "quantity-goal-motivation-pilot-v1",
+  "model": {
+    "id": "meta-llama/Llama-3.2-3B-Instruct",
+    "dtype": "float16",
+    "device": "auto",
+    "trust_remote_code": false,
+    "generation": {
+      "max_new_tokens": 192,
+      "temperature": 0.8,
+      "top_p": 0.95,
+      "do_sample": true
+    }
+  },
+  "data": {
+    "question_file": "data/questions/quantity_axis_v2_questions.jsonl",
+    "role_manifest_file": "data/manifests/role_sets/goal_motivation_pilot_v1.json"
+  },
+  "subset": {
+    "instruction_selection": "first_n",
+    "instruction_count": 2,
+    "question_selection": "first_n",
+    "question_count": 10
+  },
+  "artifacts": {
+    "root": "artifacts",
+    "dataset_name": "assistant-axis",
+    "analysis_variant": "center-only",
+    "corpus_name": "quantity-goal-motivation-pilot-v1-layer14"
+  },
+  "saving": {
+    "rollout_shard_size": 100,
+    "activation_shard_size": 32,
+    "save_every": 25
+  },
+  "analysis": {
+    "filter_name": "all-responses",
+    "pooling": "mean_response",
+    "anchor_role": "default",
+    "activation_layers": [
+      14
+    ]
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts",
+    "root_prefix": "deception-honesty-axis",
+    "private": true
+  }
+}
