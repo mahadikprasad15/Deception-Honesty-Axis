@@ -1,0 +1,95 @@
+{
+  "name": "goal-motivation-pilot-v1",
+  "anchor_role": "default",
+  "pca_roles": [
+    "preserve_standing",
+    "minimize_emotional_burden",
+    "avoid_destabilizing_complications",
+    "keep_future_options_open",
+    "leave_conclusion_to_listener",
+    "shared_understanding",
+    "consequence_bearing_listener",
+    "protect_future_trust",
+    "honor_implicit_request",
+    "preserve_anticipation"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true,
+      "family": "goal_motivation",
+      "goal_side": "anchor"
+    },
+    {
+      "name": "preserve_standing",
+      "source": "goal_preserve_standing.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "withholding"
+    },
+    {
+      "name": "minimize_emotional_burden",
+      "source": "goal_minimize_emotional_burden.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "withholding"
+    },
+    {
+      "name": "avoid_destabilizing_complications",
+      "source": "goal_avoid_destabilizing_complications.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "withholding"
+    },
+    {
+      "name": "keep_future_options_open",
+      "source": "goal_keep_future_options_open.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "withholding"
+    },
+    {
+      "name": "leave_conclusion_to_listener",
+      "source": "goal_leave_conclusion_to_listener.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "withholding"
+    },
+    {
+      "name": "shared_understanding",
+      "source": "goal_shared_understanding.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "forthcoming"
+    },
+    {
+      "name": "consequence_bearing_listener",
+      "source": "goal_consequence_bearing_listener.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "forthcoming"
+    },
+    {
+      "name": "protect_future_trust",
+      "source": "goal_protect_future_trust.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "forthcoming"
+    },
+    {
+      "name": "honor_implicit_request",
+      "source": "goal_honor_implicit_request.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "forthcoming"
+    },
+    {
+      "name": "preserve_anticipation",
+      "source": "goal_preserve_anticipation.json",
+      "anchor_only": false,
+      "family": "goal_motivation",
+      "goal_side": "forthcoming"
+    }
+  ]
+}
