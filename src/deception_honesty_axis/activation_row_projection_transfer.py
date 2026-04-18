@@ -63,6 +63,17 @@ class ProjectedActivationRowDataset:
         }
 
 
+@dataclass(frozen=True)
+class AxisProjectionSpec:
+    axis_bundle_run_dir: Path
+    axis_slug: str
+    layer_spec: str
+    layer_label: str
+    layer_bundle: dict[str, Any]
+    selected_pc_count: int
+    available_pc_count: int
+
+
 def resolve_axis_layer_bundle(
     axis_bundle: dict[str, Any],
     *,
@@ -126,6 +137,43 @@ def project_pc_features(
 
     selected = pc_scores[:, :selected_pc_count].astype(np.float32, copy=False)
     return selected, list(range(1, selected_pc_count + 1))
+
+
+def project_multi_axis_features(
+    features: np.ndarray,
+    axis_projection_specs: list[AxisProjectionSpec],
+) -> tuple[np.ndarray, list[dict[str, Any]], list[str]]:
+    if not axis_projection_specs:
+        raise ValueError("At least one axis projection spec is required")
+
+    projected_parts: list[np.ndarray] = []
+    axis_manifests: list[dict[str, Any]] = []
+    feature_labels: list[str] = []
+    for spec in axis_projection_specs:
+        projected_features, selected_pc_indices = project_pc_features(
+            features,
+            spec.layer_bundle,
+            max_pcs=spec.selected_pc_count,
+        )
+        projected_parts.append(projected_features)
+        selected_pc_labels = [f"PC{index}" for index in selected_pc_indices]
+        feature_labels.extend([f"{spec.axis_slug}:{label}" for label in selected_pc_labels])
+        axis_manifests.append(
+            {
+                "axis_bundle_run_dir": str(spec.axis_bundle_run_dir),
+                "axis_slug": spec.axis_slug,
+                "layer_spec": str(spec.layer_spec),
+                "layer_label": str(spec.layer_label),
+                "selected_pc_indices": selected_pc_indices,
+                "selected_pc_labels": selected_pc_labels,
+                "selected_pc_count": len(selected_pc_indices),
+                "available_pc_count": int(spec.available_pc_count),
+                "projected_feature_dim": int(projected_features.shape[1]),
+            }
+        )
+
+    combined = np.concatenate(projected_parts, axis=1).astype(np.float32, copy=False)
+    return combined, axis_manifests, feature_labels
 
 
 def projected_split_artifact_paths(
@@ -233,6 +281,38 @@ def _project_loaded_split(
     )
 
 
+def _project_loaded_split_multi(
+    split: LoadedActivationRowSplit,
+    *,
+    axis_projection_specs: list[AxisProjectionSpec],
+) -> ProjectedActivationRowSplit:
+    projected_features, axis_manifests, feature_labels = project_multi_axis_features(
+        split.features,
+        axis_projection_specs,
+    )
+    projection_manifest = {
+        "axes": axis_manifests,
+        "selected_pc_count": int(projected_features.shape[1]),
+        "selected_feature_labels": feature_labels,
+        "raw_feature_dim": int(split.feature_dim),
+        "projected_feature_dim": int(projected_features.shape[1]),
+    }
+    return ProjectedActivationRowSplit(
+        split_name=split.split_name,
+        features=projected_features,
+        labels=split.labels.copy(),
+        sample_ids=list(split.sample_ids),
+        activation_pooling=split.activation_pooling,
+        activation_layer_number=split.activation_layer_number,
+        source_manifest=dict(split.source_manifest),
+        group_field=split.group_field,
+        group_value=split.group_value,
+        feature_dim=int(projected_features.shape[1]),
+        source_kind=split.source_kind,
+        projection_manifest=projection_manifest,
+    )
+
+
 def project_loaded_dataset(
     dataset: LoadedActivationRowDataset,
     *,
@@ -269,6 +349,40 @@ def project_loaded_dataset(
             layer_label=layer_label,
             max_pcs=max_pcs,
             axis_bundle_run_dir=axis_bundle_run_dir,
+        )
+        save_projected_split(eval_array_path, eval_manifest_path, projected_eval)
+
+    return ProjectedActivationRowDataset(
+        name=dataset.name,
+        train=projected_train,
+        eval=projected_eval,
+    )
+
+
+def project_loaded_dataset_multi(
+    dataset: LoadedActivationRowDataset,
+    *,
+    axis_projection_specs: list[AxisProjectionSpec],
+    projected_root: Path,
+) -> ProjectedActivationRowDataset:
+    train_array_path, train_manifest_path = projected_split_artifact_paths(projected_root, dataset.name, "train")
+    eval_array_path, eval_manifest_path = projected_split_artifact_paths(projected_root, dataset.name, "eval")
+
+    if train_array_path.exists() and train_manifest_path.exists():
+        projected_train = load_projected_split(train_array_path, train_manifest_path)
+    else:
+        projected_train = _project_loaded_split_multi(
+            dataset.train,
+            axis_projection_specs=axis_projection_specs,
+        )
+        save_projected_split(train_array_path, train_manifest_path, projected_train)
+
+    if eval_array_path.exists() and eval_manifest_path.exists():
+        projected_eval = load_projected_split(eval_array_path, eval_manifest_path)
+    else:
+        projected_eval = _project_loaded_split_multi(
+            dataset.eval,
+            axis_projection_specs=axis_projection_specs,
         )
         save_projected_split(eval_array_path, eval_manifest_path, projected_eval)
 
