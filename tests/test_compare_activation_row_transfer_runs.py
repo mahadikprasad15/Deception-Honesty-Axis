@@ -161,6 +161,8 @@ class CompareActivationRowTransferRunsScriptTest(unittest.TestCase):
             self.assertTrue((run_root / "results" / "plots" / "shared__minus__raw__auroc_heatmap.png").exists())
             self.assertTrue((run_root / "results" / "plots" / "shared__minus__native__auroc_heatmap.png").exists())
             self.assertTrue((run_root / "results" / "plots" / "aggregate_summary_comparison.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pairwise_auroc_comparison.png").exists())
+            self.assertTrue((run_root / "results" / "plots" / "pairwise_offdiag_auroc_comparison.png").exists())
 
 
 if __name__ == "__main__":
