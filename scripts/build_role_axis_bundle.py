@@ -39,7 +39,7 @@ def main() -> None:
         / "role-axis-bundles"
         / experiment_config.model_slug
         / experiment_config.dataset_slug
-        / experiment_config.role_set_slug
+        / transfer_config.bundle_slug
         / experiment_config.analysis.get("pooling", "unknown-pooling")
         / run_id
     )
@@ -79,6 +79,8 @@ def main() -> None:
             "anchor_role": transfer_config.anchor_role,
             "layer_specs": transfer_config.layer_specs,
             "pc_count": transfer_config.pc_count,
+            "bundle_name": transfer_config.bundle_name,
+            "bundle_slug": transfer_config.bundle_slug,
             "activation_layer_numbers": activation_layer_numbers,
         },
     )
