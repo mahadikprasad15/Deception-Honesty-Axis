@@ -41,7 +41,13 @@ class CompareActivationRowTransferRunsScriptTest(unittest.TestCase):
                 "completed_at",
             ]
 
-            def write_run(label: str, method: str, values: dict[tuple[str, str], float]) -> Path:
+            def write_run(
+                label: str,
+                method: str,
+                values: dict[tuple[str, str], float],
+                *,
+                layer_spec: str = "14",
+            ) -> Path:
                 run_dir = temp_repo / "artifacts" / "runs" / label / "run"
                 (run_dir / "meta").mkdir(parents=True)
                 (run_dir / "results").mkdir(parents=True)
@@ -66,7 +72,7 @@ class CompareActivationRowTransferRunsScriptTest(unittest.TestCase):
                             writer.writerow(
                                 {
                                     "method": method,
-                                    "layer_spec": "14",
+                                    "layer_spec": layer_spec,
                                     "layer_label": "L14",
                                     "source_dataset": source_dataset,
                                     "target_dataset": target_dataset,
@@ -113,6 +119,7 @@ class CompareActivationRowTransferRunsScriptTest(unittest.TestCase):
                     ("Dataset B", "Dataset A"): 0.61,
                     ("Dataset B", "Dataset B"): 0.77,
                 },
+                layer_spec="14__14",
             )
 
             env = {**os.environ, "PYTHONPATH": str(repo_root / "src")}

@@ -91,11 +91,22 @@ def _dataset_behavior_map(manifest: dict[str, Any]) -> dict[str, str | None]:
 def _metric_lookup(rows: list[dict[str, str]]) -> dict[tuple[str, str, str], dict[str, str]]:
     lookup: dict[tuple[str, str, str], dict[str, str]] = {}
     for row in rows:
-        key = (str(row["layer_spec"]), str(row["source_dataset"]), str(row["target_dataset"]))
+        key = (
+            _canonical_layer_spec(str(row["layer_spec"])),
+            str(row["source_dataset"]),
+            str(row["target_dataset"]),
+        )
         if key in lookup:
             raise ValueError(f"Duplicate metric row for key={key!r}")
         lookup[key] = row
     return lookup
+
+
+def _canonical_layer_spec(layer_spec: str) -> str:
+    tokens = [token.strip() for token in str(layer_spec).split("__") if token.strip()]
+    if tokens and all(token == tokens[0] for token in tokens):
+        return tokens[0]
+    return str(layer_spec)
 
 
 def _save_heatmap(
