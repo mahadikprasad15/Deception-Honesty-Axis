@@ -55,7 +55,18 @@ def main() -> None:
         activation_layer_numbers = list(range(1, layer_count + 1))
     role_manifest = read_json(config.role_manifest_path)
     anchor_role = role_manifest["anchor_role"]
-    role_names = [entry["name"] for entry in role_manifest["roles"] if not entry.get("anchor_only", False)]
+    role_entries = list(role_manifest["roles"])
+    role_names = [entry["name"] for entry in role_entries if not entry.get("anchor_only", False)]
+    role_metadata = {
+        str(entry["name"]): {
+            "plot_label": entry.get("plot_label", entry["name"]),
+            "goal_side": entry.get("goal_side"),
+            "class": entry.get("goal_side"),
+            "category": entry.get("category"),
+            "pair_id": entry.get("pair_id"),
+        }
+        for entry in role_entries
+    }
     anchor_vector = role_vectors[anchor_role]
     mean_deception = torch.stack([role_vectors[name] for name in role_names], dim=0).mean(dim=0)
     contrast_vector = anchor_vector - mean_deception
@@ -67,6 +78,7 @@ def main() -> None:
             "vectors_run_dir": str(vectors_run_dir),
             "role_names": role_names,
             "anchor_role": anchor_role,
+            "role_metadata": role_metadata,
             "activation_layer_numbers": activation_layer_numbers,
         },
     )
@@ -101,11 +113,18 @@ def main() -> None:
     results_payload = {
         "anchor_role": anchor_role,
         "role_names": role_names,
+        "role_metadata": role_metadata,
         "activation_layer_numbers": activation_layer_numbers,
         "layers": per_layer_results,
     }
     save_results_json(run_root / "results" / "results.json", results_payload)
-    report_artifacts = write_pca_report_artifacts(run_root, per_layer_results, anchor_role, role_names)
+    report_artifacts = write_pca_report_artifacts(
+        run_root,
+        per_layer_results,
+        anchor_role,
+        role_names,
+        role_metadata=role_metadata,
+    )
     write_json(run_root / "checkpoints" / "progress.json", {"layers_processed": layer_count, "completed": True})
     write_stage_status(
         run_root,

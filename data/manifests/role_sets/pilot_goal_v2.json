@@ -1,0 +1,83 @@
+{
+  "name": "pilot-goal-v2",
+  "description": "Six-goal cross-domain pilot with three deceptive and three non-deceptive objectives for bundle construction, PCA separation, and deception-dataset evaluation.",
+  "anchor_role": "default",
+  "pca_roles": [
+    "preserve_position_deceptive",
+    "preserve_position_candid",
+    "induce_action_deceptive",
+    "support_informed_choice",
+    "conceal_position_deceptive",
+    "share_context_fairly"
+  ],
+  "roles": [
+    {
+      "name": "default",
+      "source": "default.json",
+      "anchor_only": true,
+      "family": "baseline",
+      "goal_side": "neutral",
+      "plot_label": "default"
+    },
+    {
+      "name": "preserve_position_deceptive",
+      "source": "goal_preserve_position_deceptive.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "preserve_position",
+      "goal_side": "deceptive",
+      "pair_id": "position",
+      "plot_label": "position_dec"
+    },
+    {
+      "name": "preserve_position_candid",
+      "source": "goal_preserve_position_candid.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "preserve_position",
+      "goal_side": "non_deceptive",
+      "pair_id": "position",
+      "plot_label": "position_candid"
+    },
+    {
+      "name": "induce_action_deceptive",
+      "source": "goal_induce_action_deceptive.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "induce_action",
+      "goal_side": "deceptive",
+      "pair_id": "action",
+      "plot_label": "action_dec"
+    },
+    {
+      "name": "support_informed_choice",
+      "source": "goal_support_informed_choice.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "induce_action",
+      "goal_side": "non_deceptive",
+      "pair_id": "action",
+      "plot_label": "informed_choice"
+    },
+    {
+      "name": "conceal_position_deceptive",
+      "source": "goal_conceal_position_deceptive.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "strategic_position",
+      "goal_side": "deceptive",
+      "pair_id": "strategy",
+      "plot_label": "conceal_position"
+    },
+    {
+      "name": "share_context_fairly",
+      "source": "goal_share_context_fairly.json",
+      "anchor_only": false,
+      "family": "pilot_goal_v2",
+      "category": "strategic_position",
+      "goal_side": "non_deceptive",
+      "pair_id": "strategy",
+      "plot_label": "share_context"
+    }
+  ]
+}

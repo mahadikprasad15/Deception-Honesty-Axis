@@ -78,19 +78,62 @@ def save_scatter_plot(
     coordinates: dict[str, tuple[float, float]],
     x_label: str,
     y_label: str,
+    role_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
     ensure_dir(output_path.parent)
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    class_colors = {
+        "deceptive": "#c44e52",
+        "non_deceptive": "#4c72b0",
+        "neutral": "#7f7f7f",
+        "other": "#55a868",
+    }
+    seen_classes: set[str] = set()
     for label, (x_coord, y_coord) in coordinates.items():
-        ax.scatter(x_coord, y_coord)
-        ax.text(x_coord, y_coord, label)
+        metadata = (role_metadata or {}).get(label, {})
+        raw_class = str(metadata.get("goal_side", metadata.get("class", "neutral" if label == "default" else "other")))
+        normalized_class = raw_class.strip().lower().replace(" ", "_").replace("-", "_")
+        if normalized_class in {"honest", "candid", "transparent"}:
+            normalized_class = "non_deceptive"
+        if normalized_class not in class_colors:
+            normalized_class = "other"
+        legend_label = normalized_class.replace("_", " ")
+        if normalized_class in seen_classes:
+            legend_label = "_nolegend_"
+        else:
+            seen_classes.add(normalized_class)
+        display_label = str(metadata.get("plot_label", label))
+        ax.scatter(
+            x_coord,
+            y_coord,
+            color=class_colors[normalized_class],
+            s=52,
+            edgecolors="black",
+            linewidths=0.5,
+            label=legend_label,
+            zorder=3,
+        )
+        ax.annotate(display_label, (x_coord, y_coord), xytext=(4, 4), textcoords="offset points", fontsize=9)
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.axhline(0.0, color="gray", linewidth=0.8)
     ax.axvline(0.0, color="gray", linewidth=0.8)
-    fig.tight_layout()
+    ax.grid(alpha=0.18, linewidth=0.6)
+    handles, labels = ax.get_legend_handles_labels()
+    legend_labels = [value for value in labels if value != "_nolegend_"]
+    if legend_labels:
+        ax.legend(
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1.0),
+            borderaxespad=0.0,
+            frameon=False,
+            title="Class",
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 0.82, 1.0))
+    else:
+        fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
 
@@ -219,6 +262,7 @@ def write_pca_report_artifacts(
     layers: list[dict[str, Any]],
     anchor_role: str,
     role_names: list[str],
+    role_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     tables_dir = ensure_dir(run_root / "results" / "tables")
     plots_dir = ensure_dir(run_root / "results" / "plots")
@@ -248,12 +292,16 @@ def write_pca_report_artifacts(
 
         for role_name in all_roles:
             projections = projection_lookup[role_name]
+            metadata = (role_metadata or {}).get(role_name, {})
             role_rows.append(
                 {
                     "layer": layer_index,
                     "layer_number": layer_number,
                     "layer_label": layer_label,
                     "role": role_name,
+                    "plot_label": metadata.get("plot_label", role_name),
+                    "role_class": metadata.get("goal_side", metadata.get("class")),
+                    "category": metadata.get("category"),
                     "is_anchor": role_name == anchor_role,
                     "pc1_projection": _safe_projection(projections, 0),
                     "pc2_projection": _safe_projection(projections, 1),
@@ -306,6 +354,9 @@ def write_pca_report_artifacts(
             "layer_number",
             "layer_label",
             "role",
+            "plot_label",
+            "role_class",
+            "category",
             "is_anchor",
             "pc1_projection",
             "pc2_projection",
@@ -361,7 +412,7 @@ def write_pca_report_artifacts(
         final_coordinates = _final_layer_coordinates(layers, anchor_role, role_names, x_index, y_index)
         if final_coordinates:
             final_path = plots_dir / f"{pair_name}.png"
-            save_scatter_plot(final_path, final_coordinates, x_label, y_label)
+            save_scatter_plot(final_path, final_coordinates, x_label, y_label, role_metadata=role_metadata)
             final_pair_paths[pair_name] = str(final_path)
 
         for selected_layer in (7, 14, 21, 28):
@@ -376,7 +427,7 @@ def write_pca_report_artifacts(
             if not selected_coordinates:
                 continue
             output_path = plots_dir / f"{pair_name}__L{selected_layer}.png"
-            save_scatter_plot(output_path, selected_coordinates, x_label, y_label)
+            save_scatter_plot(output_path, selected_coordinates, x_label, y_label, role_metadata=role_metadata)
             selected_layer_pair_paths[pair_name][f"L{selected_layer}"] = str(output_path)
 
     if max_pc_count:
