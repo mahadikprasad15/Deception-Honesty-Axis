@@ -105,6 +105,7 @@ HF_ARTIFACT_FILE_PATTERNS = {
     "baseline_transfer": ("runs/activation-row-transfer/", "/results/pairwise_metrics.csv"),
     "pc_projection_transfer": ("runs/activation-row-transfer-pc-projection/", "/results/pairwise_metrics.csv"),
 }
+PAPER_FIGURE_FORMATS = ("png", "pdf")
 
 
 def normalized_token(text: str) -> str:
@@ -236,3 +237,11 @@ def resolve_run_root_from_artifact_path(path_value: str, artifact_kind: str) -> 
     if normalized.endswith(suffix):
         return normalized[: -len(suffix)]
     return normalized
+
+
+def figure_output_paths(output_path: Path, formats: tuple[str, ...] = PAPER_FIGURE_FORMATS) -> dict[str, Path]:
+    base_name = output_path.stem
+    return {
+        fmt: output_path.parent / f"{base_name}.{fmt}"
+        for fmt in formats
+    }

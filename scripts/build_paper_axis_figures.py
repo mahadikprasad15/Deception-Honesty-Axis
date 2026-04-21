@@ -11,6 +11,7 @@ import numpy as np
 from deception_honesty_axis.common import ensure_dir, find_repo_root, make_run_id, read_json, slugify, write_json
 from deception_honesty_axis.metadata import write_analysis_manifest, write_stage_status
 from deception_honesty_axis.paper_plotting import (
+    PAPER_FIGURE_FORMATS,
     TRANSFER_SERIES_COLORS,
     TRANSFER_SERIES_LABELS,
     TRANSFER_SERIES_ORDER,
@@ -23,6 +24,7 @@ from deception_honesty_axis.paper_plotting import (
     canonical_role_label,
     canonical_role_side,
     dataset_order_for_behavior,
+    figure_output_paths,
     read_csv_rows,
 )
 from deception_honesty_axis.role_axis_transfer import load_role_axis_bundle
@@ -157,6 +159,14 @@ def _apply_paper_style(ax) -> None:  # noqa: ANN001
     ax.spines["bottom"].set_color("#9aa5b1")
 
 
+def _save_figure_outputs(fig, output_path: Path) -> dict[str, str]:  # noqa: ANN001
+    ensure_dir(output_path.parent)
+    path_map = figure_output_paths(output_path, PAPER_FIGURE_FORMATS)
+    fig.savefig(path_map["png"], dpi=240, bbox_inches="tight", facecolor="white")
+    fig.savefig(path_map["pdf"], bbox_inches="tight", facecolor="white")
+    return {fmt: str(path) for fmt, path in path_map.items()}
+
+
 def save_role_pc_scatter(
     output_path: Path,
     *,
@@ -164,7 +174,7 @@ def save_role_pc_scatter(
     axis_bundle: dict[str, Any],
     layer_spec: str,
     role_side_by_name: dict[str, str],
-) -> None:
+) -> dict[str, str]:
     import matplotlib.pyplot as plt
 
     layer_bundle = axis_bundle["layers"][layer_spec]
@@ -243,9 +253,9 @@ def save_role_pc_scatter(
     ax.set_ylabel("PC2 Projection", fontsize=12)
     ax.legend(frameon=False)
     fig.tight_layout()
-    ensure_dir(output_path.parent)
-    fig.savefig(output_path, dpi=240, bbox_inches="tight", facecolor="white")
+    saved_paths = _save_figure_outputs(fig, output_path)
     plt.close(fig)
+    return saved_paths
 
 
 def save_zero_shot_bar_chart(
@@ -255,7 +265,7 @@ def save_zero_shot_bar_chart(
     rows: list[dict[str, str]],
     dataset_order: list[str],
     layer_spec: str,
-) -> None:
+) -> dict[str, str]:
     import matplotlib.pyplot as plt
 
     metric_index = {
@@ -310,9 +320,9 @@ def save_zero_shot_bar_chart(
     ax.set_title(f"{axis_display_name} Zero-Shot Evaluation", fontsize=15, fontweight="bold")
     ax.legend(frameon=False, ncol=4, loc="upper center", bbox_to_anchor=(0.5, 1.08))
     fig.tight_layout()
-    ensure_dir(output_path.parent)
-    fig.savefig(output_path, dpi=240, bbox_inches="tight", facecolor="white")
+    saved_paths = _save_figure_outputs(fig, output_path)
     plt.close(fig)
+    return saved_paths
 
 
 def save_transfer_heatmap(
@@ -322,7 +332,7 @@ def save_transfer_heatmap(
     rows: list[dict[str, str]],
     dataset_order: list[str],
     title_suffix: str,
-) -> None:
+) -> dict[str, str]:
     import matplotlib.pyplot as plt
 
     matrix = np.full((len(dataset_order), len(dataset_order)), np.nan, dtype=np.float32)
@@ -359,9 +369,9 @@ def save_transfer_heatmap(
             )
     fig.colorbar(image, ax=ax, label="AUROC", fraction=0.046, pad=0.04)
     fig.tight_layout()
-    ensure_dir(output_path.parent)
-    fig.savefig(output_path, dpi=240, bbox_inches="tight", facecolor="white")
+    saved_paths = _save_figure_outputs(fig, output_path)
     plt.close(fig)
+    return saved_paths
 
 
 def save_projection_pair_bars(
@@ -372,7 +382,7 @@ def save_projection_pair_bars(
     baseline_rows: list[dict[str, str]],
     projected_rows_by_pc: dict[int, list[dict[str, str]]],
     include_diagonal_pairs: bool,
-) -> None:
+) -> dict[str, str]:
     import matplotlib.pyplot as plt
 
     pair_order = [
@@ -441,9 +451,9 @@ def save_projection_pair_bars(
     ax.set_title(f"{axis_display_name} Cross-Dataset Transfer: Baseline vs PC Projections", fontsize=15, fontweight="bold")
     ax.legend(frameon=False, ncol=4, loc="upper center", bbox_to_anchor=(0.5, 1.08))
     fig.tight_layout()
-    ensure_dir(output_path.parent)
-    fig.savefig(output_path, dpi=240, bbox_inches="tight", facecolor="white")
+    saved_paths = _save_figure_outputs(fig, output_path)
     plt.close(fig)
+    return saved_paths
 
 
 def main() -> None:
@@ -509,14 +519,14 @@ def main() -> None:
         baseline_heatmap_path = run_root / "results" / "plots" / f"{axis_slug}__baseline_heatmap.png"
         projection_bar_path = run_root / "results" / "plots" / f"{axis_slug}__baseline_vs_projection_pairs.png"
 
-        save_role_pc_scatter(
+        role_scatter_outputs = save_role_pc_scatter(
             role_scatter_path,
             axis_display_name=axis_display_name,
             axis_bundle=axis_bundle,
             layer_spec=layer_spec,
             role_side_by_name=role_side_by_name,
         )
-        save_zero_shot_bar_chart(
+        zero_shot_outputs = save_zero_shot_bar_chart(
             zero_shot_bar_path,
             axis_display_name=axis_display_name,
             rows=zero_shot_rows,
@@ -525,7 +535,7 @@ def main() -> None:
         )
 
         baseline_rows = load_metric_rows(axis.baseline_transfer_run_dir, method_name="activation_logistic")
-        save_transfer_heatmap(
+        baseline_heatmap_outputs = save_transfer_heatmap(
             baseline_heatmap_path,
             axis_display_name=axis_display_name,
             rows=baseline_rows,
@@ -537,7 +547,7 @@ def main() -> None:
             pc_count: load_metric_rows(run_dir, method_name="activation_logistic_pc_projection")
             for pc_count, run_dir in axis.projected_transfer_run_dirs.items()
         }
-        save_projection_pair_bars(
+        projection_bar_outputs = save_projection_pair_bars(
             projection_bar_path,
             axis_display_name=axis_display_name,
             dataset_order=dataset_order,
@@ -553,10 +563,10 @@ def main() -> None:
                 "behavior": behavior_name,
                 "layer_spec": layer_spec,
                 "dataset_order": dataset_order,
-                "role_scatter_plot": str(role_scatter_path),
-                "zero_shot_bar_chart": str(zero_shot_bar_path),
-                "baseline_heatmap": str(baseline_heatmap_path),
-                "baseline_vs_projection_bars": str(projection_bar_path),
+                "role_scatter_plot": role_scatter_outputs,
+                "zero_shot_bar_chart": zero_shot_outputs,
+                "baseline_heatmap": baseline_heatmap_outputs,
+                "baseline_vs_projection_bars": projection_bar_outputs,
             }
         )
 

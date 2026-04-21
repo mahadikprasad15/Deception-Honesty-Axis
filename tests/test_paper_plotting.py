@@ -6,6 +6,7 @@ from deception_honesty_axis.paper_plotting import (
     canonical_axis_display_name,
     canonical_dataset_label,
     canonical_role_side,
+    figure_output_paths,
     infer_artifact_kind,
     infer_axis_key_from_path,
     parse_pc_count_from_path,
@@ -44,6 +45,11 @@ class PaperPlottingTest(unittest.TestCase):
             resolve_run_root_from_artifact_path(path_value, "pc_projection_transfer"),
             path_value.removesuffix("/results/pairwise_metrics.csv"),
         )
+
+    def test_figure_output_paths_include_png_and_pdf(self) -> None:
+        paths = figure_output_paths(__import__("pathlib").Path("plots/deception_axis__zero_shot_bar_chart.png"))
+        self.assertEqual(str(paths["png"]), "plots/deception_axis__zero_shot_bar_chart.png")
+        self.assertEqual(str(paths["pdf"]), "plots/deception_axis__zero_shot_bar_chart.pdf")
 
 
 if __name__ == "__main__":
