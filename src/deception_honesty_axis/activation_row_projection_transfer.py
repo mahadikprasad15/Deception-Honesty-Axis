@@ -83,7 +83,7 @@ def resolve_axis_layer_bundle(
     if expected_layer_number is not None:
         matches: list[str] = []
         for layer_spec in layer_specs:
-            layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
+            layer_numbers = [int(value) for value in (axis_bundle["layers"][layer_spec].get("layer_numbers") or [])]
             if len(layer_numbers) == 1 and int(layer_numbers[0]) == int(expected_layer_number):
                 matches.append(layer_spec)
                 continue
@@ -112,7 +112,7 @@ def resolve_axis_layer_bundle(
         layer_spec = layer_specs[0]
 
     layer_bundle = axis_bundle["layers"][layer_spec]
-    layer_numbers = [int(value) for value in layer_bundle.get("layer_numbers", [])]
+    layer_numbers = [int(value) for value in (layer_bundle.get("layer_numbers") or [])]
     if len(layer_numbers) == 1:
         layer_label = f"L{layer_numbers[0]}"
     else:

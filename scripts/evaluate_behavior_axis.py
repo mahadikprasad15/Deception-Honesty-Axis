@@ -160,8 +160,15 @@ def main() -> None:
     if config.expected_layer_number is not None:
         compatible_specs = []
         for layer_spec in layer_specs:
-            layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
+            layer_numbers = [int(value) for value in (axis_bundle["layers"][layer_spec].get("layer_numbers") or [])]
             if len(layer_numbers) == 1 and int(layer_numbers[0]) == int(config.expected_layer_number):
+                compatible_specs.append(layer_spec)
+                continue
+            try:
+                parsed_layer_spec = int(str(layer_spec))
+            except (TypeError, ValueError):
+                parsed_layer_spec = None
+            if parsed_layer_spec == int(config.expected_layer_number):
                 compatible_specs.append(layer_spec)
         if not compatible_specs:
             raise ValueError(

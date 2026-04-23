@@ -116,7 +116,7 @@ def choose_layer_spec(axis_bundle: dict[str, Any], requested: str | None) -> str
     if requested_str in axis_bundle["layers"]:
         return requested_str
     for layer_spec in layer_specs:
-        layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
+        layer_numbers = [int(value) for value in (axis_bundle["layers"][layer_spec].get("layer_numbers") or [])]
         if len(layer_numbers) == 1 and requested_str == str(layer_numbers[0]):
             return str(layer_spec)
     raise ValueError(f"Requested layer_spec={requested!r} is unavailable in axis bundle layers {layer_specs!r}")

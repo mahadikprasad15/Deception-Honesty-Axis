@@ -76,8 +76,16 @@ def resolve_axis_layer_bundle(axis_bundle: dict[str, Any], expected_layer_number
     else:
         matches: list[str] = []
         for layer_spec in layer_specs:
-            layer_numbers = [int(value) for value in axis_bundle["layers"][layer_spec].get("layer_numbers", [])]
+            layer_payload = axis_bundle["layers"][layer_spec]
+            layer_numbers = [int(value) for value in (layer_payload.get("layer_numbers") or [])]
             if expected_layer_number in layer_numbers:
+                matches.append(layer_spec)
+                continue
+            try:
+                parsed_layer_spec = int(str(layer_spec))
+            except (TypeError, ValueError):
+                parsed_layer_spec = None
+            if parsed_layer_spec == int(expected_layer_number):
                 matches.append(layer_spec)
         if len(matches) != 1:
             raise ValueError(
