@@ -1,5 +1,10 @@
 # Colab 8B Pipeline Runbook
 
+This runbook has two jobs:
+
+1. Build and evaluate the new 8B QuantityV2 / Sycophancy pilot axes.
+2. Re-run the stronger transfer baselines for the existing 3B setup using already-cached 3B artifacts.
+
 This runbook assumes Google Drive is mounted at `/content/drive` and the dataset activations are stored under:
 
 ```text
@@ -59,6 +64,43 @@ python scripts/sync_hf_artifacts.py \
 
 The role/question manifests and config JSON files are tracked in git under `data/` and `configs/`, so they do not need to be pulled from HF.
 
+## 3B Baselines From Existing Activations
+
+The new dataset-PCA and random-subspace baselines are model-agnostic. For 3B, do not regenerate deception dataset
+activations if the existing Drive cache is present. Use the existing 3B completion splits directly:
+
+```bash
+cd "$DHA_ROOT"
+python scripts/evaluate_activation_row_transfer.py \
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama32_3b.json \
+  --run-id llama32-3b-deception-raw
+
+python scripts/evaluate_activation_row_transfer_subspace_baselines.py \
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama32_3b.json \
+  --k-values 1 2 3 \
+  --random-seeds 11 23 37 41 53 \
+  --run-id llama32-3b-deception-subspace-baselines
+```
+
+For 3B persona-PC projected deception probes, use the pulled 3B QuantityV2 bundle. Resolve the exact bundle run dir
+from the selective HF pull:
+
+```bash
+cd "$DHA_ROOT"
+find artifacts/runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep \
+  -path "*/results/axis_bundle.pt" -print
+```
+
+Then pass the parent run directory to:
+
+```bash
+python scripts/evaluate_activation_row_transfer_pc_projection_sweep.py \
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama32_3b.json \
+  --axis-bundle-run-dir PATH_TO_3B_QUANTITY_V2_BUNDLE_RUN_DIR \
+  --k-values 1 2 3 \
+  --run-id llama32-3b-deception-qv2-pc-sweep
+```
+
 ## Generate 8B Dataset Activations
 
 The 8B deception transfer evaluations need Drive-backed dataset activations before any zero-shot, raw-probe,
@@ -66,6 +108,17 @@ persona-PC, dataset-PCA, or random-subspace evaluation can run.
 
 Use the Efficacy repo to cache the six deception completion splits into the exact root expected by this repo's
 8B configs:
+
+This is the same loader route used by the Efficacy repo's 3B principled cross-dataset runbook:
+
+- `Deception-AILiar`: `DeceptionAILiarDataset`, pregenerated paired honest/deceptive completions.
+- `Deception-Roleplaying`: `DeceptionRoleplayingDataset` with `--use_gold_completions`.
+- `Deception-InstructedDeception`: explicit typed-message loader.
+- `Deception-Mask`: explicit typed-message loader with fail-closed Mask file resolution.
+- `Deception-ConvincingGame`: typed-message loader through `--dataset_file`, using the `convincing-game__*` source file.
+- `Deception-HarmPressureChoice`: typed-message loader through `--dataset_file`, using the `harm-pressure-choice__*` source file.
+
+Run this only after confirming the typed-deception source files exist under `EFFICACY_ROOT/data/apollo_raw`.
 
 ```python
 from pathlib import Path
@@ -168,6 +221,27 @@ for dataset in SOURCE_DATASETS:
 This cell will generate model completions and Cerebras labels for datasets that do not already have pregenerated
 gold completions. Ensure `HF_TOKEN` and `CEREBRAS_API_KEY` are set in the Colab environment before running it.
 
+After caching, sanity-check the 8B activation cache before running transfer evaluations:
+
+```python
+from pathlib import Path
+import json
+from collections import Counter
+
+root = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt")
+model_dir = "meta-llama_Meta-Llama-3.1-8B-Instruct"
+for dataset in SOURCE_DATASETS:
+    for split in SPLITS:
+        path = root / model_dir / f"{dataset}-completion" / split
+        manifest = path / "manifest.jsonl"
+        shards = sorted(path.glob("shard_*.safetensors"))
+        rows = [json.loads(line) for line in manifest.open()] if manifest.exists() else []
+        labels = Counter(int(row["label"]) for row in rows if "label" in row)
+        print(dataset, split, "rows=", len(rows), "labels=", dict(labels), "shards=", len(shards))
+        assert rows and shards, path
+        assert set(labels).issubset({0, 1}) and len(labels) == 2, (path, labels)
+```
+
 ## Build 8B Role Axes
 
 The selective HF pull above fetches the fixed 3B rollouts for both axes. To reuse those exact prompts/responses
@@ -229,6 +303,12 @@ python scripts/evaluate_activation_row_transfer.py \
   --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama31_8b_instruct.json \
   --run-id llama31-8b-sycophancy-raw
 ```
+
+The sycophancy activation-transfer configs require sycophancy activation rows for the matching model. For 3B, those
+are pulled from HF under `runs/external-sycophancy-activation-extraction/**`. For 8B, run
+`scripts/extract_external_sycophancy_activations.py` for each sycophancy source at layer 16 before running the
+8B sycophancy raw/projected/subspace commands, or update the sycophancy transfer config paths to point at the
+generated `results/records.jsonl` files.
 
 Run projected probes for `k=1,2,3`:
 
