@@ -392,11 +392,59 @@ python "$DHA_ROOT/scripts/evaluate_activation_row_transfer.py" \
   --run-id llama3-8b-sycophancy-raw
 ```
 
-The sycophancy activation-transfer configs require sycophancy activation rows for the matching model. For 3B, those
-are pulled from HF under `runs/external-sycophancy-activation-extraction/**`. For 8B, run
-`scripts/extract_external_sycophancy_activations.py` for each sycophancy source at layer 16 before running the
-8B sycophancy raw/projected/subspace commands, or update the sycophancy transfer config paths to point at the
-generated `results/records.jsonl` files.
+The sycophancy role-axis pipeline builds the 8B role axis, but its `transfer` stage needs separate benchmark
+activation rows for the matching model. Do not use the completion-split sycophancy config until those benchmark
+activations exist. For the external sycophancy benchmarks, extract activation rows at layer 16, then generate an
+activation-row transfer config from the completed extraction runs:
+
+```bash
+%%bash
+set -euo pipefail
+DHA_ROOT=/content/Deception-Honesty-Axis
+cd "$DHA_ROOT"
+
+python "$DHA_ROOT/scripts/extract_external_sycophancy_activations.py" \
+  --source-repo-id arianaazarbal/sycophancy_dataset \
+  --source-split train \
+  --adapter ariana_sycophancy \
+  --model-name meta-llama/Meta-Llama-3-8B-Instruct \
+  --layer 16 \
+  --pooling mean_response \
+  --batch-size 4 \
+  --target-name ariana-sycophancy-train \
+  --run-id llama3-8b-ariana-sycophancy-train
+
+python "$DHA_ROOT/scripts/extract_external_sycophancy_activations.py" \
+  --source-repo-id henrypapadatos/Open-ended_sycophancy \
+  --source-split train \
+  --adapter open_ended_sycophancy \
+  --model-name meta-llama/Meta-Llama-3-8B-Instruct \
+  --layer 16 \
+  --pooling mean_response \
+  --batch-size 4 \
+  --target-name open-ended-sycophancy-train \
+  --run-id llama3-8b-open-ended-sycophancy-train
+```
+
+For OEQ, first prepare/pull the three prepared HF datasets, then run the same extraction script with
+`--adapter oeq_prepared` and target names `oeq-validation-human`, `oeq-indirectness-human`, and
+`oeq-framing-human`. After all available extraction runs complete:
+
+```bash
+%%bash
+set -euo pipefail
+DHA_ROOT=/content/Deception-Honesty-Axis
+cd "$DHA_ROOT"
+
+python "$DHA_ROOT/scripts/prepare_sycophancy_activation_row_transfer_config.py" \
+  --model-name meta-llama/Meta-Llama-3-8B-Instruct \
+  --expected-layer-number 16 \
+  --output-config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama3_8b_external.json \
+  --allow-missing
+```
+
+Use the generated `activation_row_transfer_sycophancy_pilot_v1_llama3_8b_external.json` config for 8B sycophancy
+raw/projected/subspace transfer. If `--allow-missing` skipped OEQ targets, the run is a partial sycophancy run.
 
 Run projected probes for `k=1,2,3`:
 
