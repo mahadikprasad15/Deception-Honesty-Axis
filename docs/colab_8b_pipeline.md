@@ -28,23 +28,51 @@ from google.colab import drive
 drive.mount("/content/drive")
 ```
 
-Pull existing artifacts from HF:
+Pull only the HF artifacts needed for this run. Do not pull the whole artifact repo into Colab.
 
 ```bash
 python scripts/sync_hf_artifacts.py \
   --direction pull \
   --repo-id Prasadmahadik/deception-honesty-axis-artifacts \
-  --local-dir artifacts
+  --local-dir artifacts \
+  --allow-patterns \
+    "runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep/**" \
+    "runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1-cumulative-pc-sweep/**" \
+    "runs/external-sycophancy-activation-extraction/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2/rollouts/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2/indexes/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2/meta/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1/rollouts/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1/indexes/**" \
+    "corpora/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1/meta/**"
 ```
+
+The role/question manifests and config JSON files are tracked in git under `data/` and `configs/`, so they do not need to be pulled from HF.
 
 ## Build 8B Role Axes
 
-Use one shared run id per axis so role vectors, PCA, bundles, and zero-shot transfer line up.
+The selective HF pull above fetches the fixed 3B rollouts for both axes. To reuse those exact prompts/responses
+for 8B activation extraction, materialize them under the 8B corpus path:
 
 ```bash
 RUN_ID_8B_QV2=llama31-8b-quantity-v2
 RUN_ID_8B_SYC=llama31-8b-sycophancy-pilot-v1
+
+SRC_MODEL=meta-llama-llama-3-2-3b-instruct
+DST_MODEL=meta-llama-meta-llama-3-1-8b-instruct
+
+for AXIS in quantity-axis-v2 sycophancy-pilot-v1; do
+  SRC="artifacts/corpora/$SRC_MODEL/assistant-axis/$AXIS"
+  DST="artifacts/corpora/$DST_MODEL/assistant-axis/$AXIS"
+  mkdir -p "$DST"
+  cp -a "$SRC/rollouts" "$DST/"
+  cp -a "$SRC/indexes" "$DST/"
+  if [ -d "$SRC/meta" ]; then cp -a "$SRC/meta" "$DST/"; fi
+done
 ```
+
+Then run the 8B pipeline from activation extraction onward. Omit the `rollouts` stage unless you intentionally want
+fresh 8B generations instead of fixed-text 8B activations.
 
 QuantityV2:
 
@@ -53,7 +81,7 @@ python scripts/run_variant_pipeline.py \
   --experiment-config configs/experiments/quantity_axis_v2_llama31_8b_instruct.json \
   --probe-config configs/probes/role_axis_transfer_quantity_v2_cumulative_pc_sweep_llama31_8b_instruct.json \
   --run-id "$RUN_ID_8B_QV2" \
-  --stages rollouts activations role_vectors pca axis_bundle transfer postprocess
+  --stages activations role_vectors pca axis_bundle transfer postprocess
 ```
 
 Sycophancy pilot v1:
@@ -63,7 +91,7 @@ python scripts/run_variant_pipeline.py \
   --experiment-config configs/experiments/sycophancy_pilot_v1_llama31_8b_instruct.json \
   --probe-config configs/probes/role_axis_transfer_sycophancy_pilot_v1_cumulative_pc_sweep_llama31_8b_instruct.json \
   --run-id "$RUN_ID_8B_SYC" \
-  --stages rollouts activations role_vectors pca axis_bundle transfer postprocess
+  --stages activations role_vectors pca axis_bundle transfer postprocess
 ```
 
 ## Raw Transfer, Persona-PC Transfer, And Baselines
