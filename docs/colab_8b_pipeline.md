@@ -162,7 +162,7 @@ EFFICACY_ROOT = Path("/content/Efficacy-of-ensemble-of-attention-probes")
 MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 MODEL_DIR = MODEL.replace("/", "_")
 ACTS_ROOT = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt")
-RAW_ROOT = EFFICACY_ROOT / "data" / "apollo_raw"
+RAW_ROOT = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/apollo_raw")
 
 SOURCE_DATASETS = [
     "Deception-ConvincingGame",
@@ -181,20 +181,37 @@ def has_manifest_and_shards(path: Path) -> bool:
     return (path / "manifest.jsonl").exists() and any(path.glob("shard_*.safetensors"))
 
 def resolve_cache_dataset_args(dataset: str) -> list[str]:
-    if dataset == "Deception-ConvincingGame":
-        patterns = ["convincing-game__*.jsonl", "convincing-game__*.parquet", "convincing-game__*.json"]
-        base_dataset = "Deception-InstructedDeception"
-    elif dataset == "Deception-HarmPressureChoice":
-        patterns = ["harm-pressure-choice__*.jsonl", "harm-pressure-choice__*.parquet", "harm-pressure-choice__*.json"]
-        base_dataset = "Deception-InstructedDeception"
-    else:
+    typed_sources = {
+        "Deception-ConvincingGame": (
+            "Deception-InstructedDeception",
+            ["convincing-game__*.jsonl", "convincing-game__*.parquet", "convincing-game__*.json"],
+        ),
+        "Deception-HarmPressureChoice": (
+            "Deception-InstructedDeception",
+            ["harm-pressure-choice__*.jsonl", "harm-pressure-choice__*.parquet", "harm-pressure-choice__*.json"],
+        ),
+        "Deception-InstructedDeception": (
+            "Deception-InstructedDeception",
+            ["instructed-deception__*.jsonl", "instructed_deception__*.jsonl"],
+        ),
+        "Deception-Mask": (
+            "Deception-Mask",
+            ["mask__*.jsonl", "mask__*.parquet", "mask__*.json"],
+        ),
+        "Deception-Roleplaying": (
+            "Deception-Roleplaying",
+            ["roleplaying/dataset.yaml", "roleplaying/*.yaml", "dataset.yaml"],
+        ),
+    }
+    if dataset not in typed_sources:
         return ["--dataset", dataset]
 
-    matches = []
+    base_dataset, patterns = typed_sources[dataset]
+    matches: list[Path] = []
     for pattern in patterns:
         matches.extend(sorted(RAW_ROOT.rglob(pattern)))
     if not matches:
-        raise FileNotFoundError(f"Missing typed-deception source file for {dataset} under {RAW_ROOT}")
+        raise FileNotFoundError(f"Missing source file for {dataset} under {RAW_ROOT}")
     dataset_file = matches[0]
     print(f"[dataset] {dataset} uses {dataset_file}")
     return ["--dataset", base_dataset, "--dataset_file", str(dataset_file)]
@@ -249,8 +266,9 @@ for dataset in SOURCE_DATASETS:
         run_stream(label, cmd)
 ```
 
-This cell will generate model completions and Cerebras labels for datasets that do not already have pregenerated
-gold completions. Ensure `HF_TOKEN` and `CEREBRAS_API_KEY` are set in the Colab environment before running it.
+This cell uses pregenerated completions and labels when the source dataset provides them. In that mode Cerebras is
+not used. `CEREBRAS_API_KEY` is only required for datasets that are prompts-only and need newly generated completions
+to be judged. `HF_TOKEN` is still required for gated Llama weights.
 
 After caching, sanity-check the 8B activation cache before running transfer evaluations:
 
