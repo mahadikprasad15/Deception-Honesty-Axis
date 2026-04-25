@@ -313,10 +313,17 @@ cd "$DHA_ROOT"
 for AXIS in quantity-axis-v2 sycophancy-pilot-v1; do
   SRC="artifacts/corpora/$SRC_MODEL/assistant-axis/$AXIS"
   DST="artifacts/corpora/$DST_MODEL/assistant-axis/$AXIS"
-  mkdir -p "$DST"
+  mkdir -p "$DST/indexes" "$DST/meta"
   cp -a "$SRC/rollouts" "$DST/"
-  cp -a "$SRC/indexes" "$DST/"
-  if [ -d "$SRC/meta" ]; then cp -a "$SRC/meta" "$DST/"; fi
+  cp -a "$SRC/indexes/rollouts.jsonl" "$DST/indexes/"
+  if [ -f "$SRC/meta/coverage.json" ]; then
+    cp -a "$SRC/meta/coverage.json" "$DST/meta/source_3b_coverage.json"
+  fi
+
+  rm -rf "$DST/activations"
+  rm -f "$DST/indexes/activations.jsonl"
+  rm -f "$DST/meta/extract_activations_status.json"
+  rm -f "$DST/checkpoints/extract_activations_progress.json"
 done
 ```
 
