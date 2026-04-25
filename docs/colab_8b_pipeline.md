@@ -98,8 +98,10 @@ from the selective HF pull:
 set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
-find artifacts/runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep \
-  -path "*/results/axis_bundle.pt" -print
+find artifacts/runs/role-axis-bundles \
+  -path "*/results/axis_bundle.pt" \
+  | grep -E "quantity.*v2|quantity-axis-v2" \
+  | sort
 ```
 
 Then pass the parent run directory to:
@@ -109,9 +111,23 @@ Then pass the parent run directory to:
 set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
+AXIS_BUNDLE_PT=$(find artifacts/runs/role-axis-bundles \
+  -path "*/results/axis_bundle.pt" \
+  | grep -E "quantity.*v2|quantity-axis-v2" \
+  | sort \
+  | tail -n 1)
+
+if [ -z "$AXIS_BUNDLE_PT" ]; then
+  echo "No local 3B QuantityV2 axis bundle found. Re-run the HF pull with broader role-axis-bundle patterns."
+  exit 1
+fi
+
+AXIS_BUNDLE_RUN_DIR=$(dirname "$(dirname "$AXIS_BUNDLE_PT")")
+echo "Using axis bundle run dir: $AXIS_BUNDLE_RUN_DIR"
+
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer_pc_projection_sweep.py" \
   --config configs/probes/activation_row_transfer_deception_quantity_v2_llama32_3b.json \
-  --axis-bundle-run-dir PATH_TO_3B_QUANTITY_V2_BUNDLE_RUN_DIR \
+  --axis-bundle-run-dir "$AXIS_BUNDLE_RUN_DIR" \
   --k-values 1 2 3 \
   --run-id llama32-3b-deception-qv2-pc-sweep
 ```
