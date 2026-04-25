@@ -478,14 +478,25 @@ def main() -> None:
         raise ValueError("--random-seeds must contain at least one seed")
 
     config = load_activation_row_transfer_config(args.config.resolve())
-    loaded_datasets = [
-        load_activation_row_dataset(
+    loaded_datasets = []
+    for index, dataset_config in enumerate(config.datasets, start=1):
+        print(
+            "[activation-row-transfer-subspace-baselines] "
+            f"loading dataset {index}/{len(config.datasets)}: {dataset_config.name}",
+            flush=True,
+        )
+        loaded = load_activation_row_dataset(
             dataset_config,
             expected_pooling=config.expected_pooling,
             expected_layer_number=config.expected_layer_number,
         )
-        for dataset_config in config.datasets
-    ]
+        loaded_datasets.append(loaded)
+        print(
+            "[activation-row-transfer-subspace-baselines] "
+            f"loaded {dataset_config.name}: train={loaded.train.labels.shape[0]} "
+            f"eval={loaded.eval.labels.shape[0]} dim={loaded.train.feature_dim}",
+            flush=True,
+        )
     compatibility = ensure_loaded_dataset_compatibility(loaded_datasets)
     resolved_pooling = compatibility["activation_pooling"] or config.expected_pooling or "unknown"
     resolved_layer_number = compatibility["activation_layer_number"]

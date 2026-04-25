@@ -91,14 +91,25 @@ def main() -> None:
     if invalid_methods:
         raise ValueError(f"Unsupported activation-row transfer methods requested: {invalid_methods}")
 
-    loaded_datasets = [
-        load_activation_row_dataset(
+    loaded_datasets = []
+    for index, dataset_config in enumerate(config.datasets, start=1):
+        print(
+            f"[activation-row-transfer] loading dataset {index}/{len(config.datasets)}: "
+            f"{dataset_config.name}",
+            flush=True,
+        )
+        loaded = load_activation_row_dataset(
             dataset_config,
             expected_pooling=config.expected_pooling,
             expected_layer_number=config.expected_layer_number,
         )
-        for dataset_config in config.datasets
-    ]
+        loaded_datasets.append(loaded)
+        print(
+            f"[activation-row-transfer] loaded {dataset_config.name}: "
+            f"train={loaded.train.labels.shape[0]} eval={loaded.eval.labels.shape[0]} "
+            f"dim={loaded.train.feature_dim}",
+            flush=True,
+        )
     compatibility = ensure_loaded_dataset_compatibility(loaded_datasets)
     resolved_pooling = compatibility["activation_pooling"] or config.expected_pooling or "unknown"
     resolved_layer_number = compatibility["activation_layer_number"]
