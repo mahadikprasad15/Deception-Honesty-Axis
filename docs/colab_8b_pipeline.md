@@ -14,7 +14,7 @@ This runbook assumes Google Drive is mounted at `/content/drive` and the dataset
 The 8B model-specific activation root expected by the configs is:
 
 ```text
-/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct
+/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3-8B-Instruct
 ```
 
 ## Setup
@@ -151,7 +151,7 @@ This is the same loader route used by the Efficacy repo's 3B principled cross-da
 - `Deception-ConvincingGame`: typed-message loader through `--dataset_file`, using the `convincing-game__*` source file.
 - `Deception-HarmPressureChoice`: typed-message loader through `--dataset_file`, using the `harm-pressure-choice__*` source file.
 
-Run this only after confirming the typed-deception source files exist under `EFFICACY_ROOT/data/apollo_raw`.
+Run this only after confirming the typed-deception source files exist under the Drive-backed `RAW_ROOT`.
 
 ```python
 from pathlib import Path
@@ -161,7 +161,7 @@ import sys
 import time
 
 EFFICACY_ROOT = Path("/content/Efficacy-of-ensemble-of-attention-probes")
-MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
 MODEL_DIR = MODEL.replace("/", "_")
 ACTS_ROOT = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt")
 RAW_ROOT = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/apollo_raw")
@@ -280,7 +280,7 @@ import json
 from collections import Counter
 
 root = Path("/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt")
-model_dir = "meta-llama_Meta-Llama-3.1-8B-Instruct"
+model_dir = "meta-llama_Meta-Llama-3-8B-Instruct"
 for dataset in SOURCE_DATASETS:
     for split in SPLITS:
         path = root / model_dir / f"{dataset}-completion" / split
@@ -303,7 +303,7 @@ for 8B activation extraction, materialize them under the 8B corpus path:
 set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 SRC_MODEL=meta-llama-llama-3-2-3b-instruct
-DST_MODEL=meta-llama-meta-llama-3-1-8b-instruct
+DST_MODEL=meta-llama-meta-llama-3-8b-instruct
 
 cd "$DHA_ROOT"
 for AXIS in quantity-axis-v2 sycophancy-pilot-v1; do
@@ -323,16 +323,16 @@ The `activations` stage is the cache step for the 8B role-rollout activations. I
 index and writes layer-16 pooled response activations under:
 
 ```text
-artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/quantity-axis-v2/activations/
-artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/sycophancy-pilot-v1/activations/
+artifacts/corpora/meta-llama-meta-llama-3-8b-instruct/assistant-axis/quantity-axis-v2/activations/
+artifacts/corpora/meta-llama-meta-llama-3-8b-instruct/assistant-axis/sycophancy-pilot-v1/activations/
 ```
 
 The matching resume indexes and status files are:
 
 ```text
-artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/indexes/activations.jsonl
-artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/meta/extract_activations_status.json
-artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/meta/coverage.json
+artifacts/corpora/meta-llama-meta-llama-3-8b-instruct/assistant-axis/<axis>/indexes/activations.jsonl
+artifacts/corpora/meta-llama-meta-llama-3-8b-instruct/assistant-axis/<axis>/meta/extract_activations_status.json
+artifacts/corpora/meta-llama-meta-llama-3-8b-instruct/assistant-axis/<axis>/meta/coverage.json
 ```
 
 QuantityV2:
@@ -343,9 +343,9 @@ set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/run_variant_pipeline.py" \
-  --experiment-config configs/experiments/quantity_axis_v2_llama31_8b_instruct.json \
-  --probe-config configs/probes/role_axis_transfer_quantity_v2_cumulative_pc_sweep_llama31_8b_instruct.json \
-  --run-id llama31-8b-quantity-v2 \
+  --experiment-config configs/experiments/quantity_axis_v2_llama3_8b_instruct.json \
+  --probe-config configs/probes/role_axis_transfer_quantity_v2_cumulative_pc_sweep_llama3_8b_instruct.json \
+  --run-id llama3-8b-quantity-v2 \
   --stages activations role_vectors pca axis_bundle transfer postprocess
 ```
 
@@ -357,9 +357,9 @@ set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/run_variant_pipeline.py" \
-  --experiment-config configs/experiments/sycophancy_pilot_v1_llama31_8b_instruct.json \
-  --probe-config configs/probes/role_axis_transfer_sycophancy_pilot_v1_cumulative_pc_sweep_llama31_8b_instruct.json \
-  --run-id llama31-8b-sycophancy-pilot-v1 \
+  --experiment-config configs/experiments/sycophancy_pilot_v1_llama3_8b_instruct.json \
+  --probe-config configs/probes/role_axis_transfer_sycophancy_pilot_v1_cumulative_pc_sweep_llama3_8b_instruct.json \
+  --run-id llama3-8b-sycophancy-pilot-v1 \
   --stages activations role_vectors pca axis_bundle transfer postprocess
 ```
 
@@ -373,12 +373,12 @@ set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer.py" \
-  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama31_8b_instruct.json \
-  --run-id llama31-8b-deception-raw
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama3_8b_instruct.json \
+  --run-id llama3-8b-deception-raw
 
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer.py" \
-  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama31_8b_instruct.json \
-  --run-id llama31-8b-sycophancy-raw
+  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama3_8b_instruct.json \
+  --run-id llama3-8b-sycophancy-raw
 ```
 
 The sycophancy activation-transfer configs require sycophancy activation rows for the matching model. For 3B, those
@@ -395,16 +395,16 @@ set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer_pc_projection_sweep.py" \
-  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama31_8b_instruct.json \
-  --axis-bundle-run-dir artifacts/runs/role-axis-bundles/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep/mean_response/llama31-8b-quantity-v2 \
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama3_8b_instruct.json \
+  --axis-bundle-run-dir artifacts/runs/role-axis-bundles/meta-llama-meta-llama-3-8b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep/mean_response/llama3-8b-quantity-v2 \
   --k-values 1 2 3 \
-  --run-id llama31-8b-deception-qv2-pc-sweep
+  --run-id llama3-8b-deception-qv2-pc-sweep
 
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer_pc_projection_sweep.py" \
-  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama31_8b_instruct.json \
-  --axis-bundle-run-dir artifacts/runs/role-axis-bundles/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response/llama31-8b-sycophancy-pilot-v1 \
+  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama3_8b_instruct.json \
+  --axis-bundle-run-dir artifacts/runs/role-axis-bundles/meta-llama-meta-llama-3-8b-instruct/assistant-axis/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response/llama3-8b-sycophancy-pilot-v1 \
   --k-values 1 2 3 \
-  --run-id llama31-8b-sycophancy-pc-sweep
+  --run-id llama3-8b-sycophancy-pc-sweep
 ```
 
 Run dataset-PCA and random orthonormal subspace baselines:
@@ -415,16 +415,16 @@ set -euo pipefail
 DHA_ROOT=/content/Deception-Honesty-Axis
 cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer_subspace_baselines.py" \
-  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama31_8b_instruct.json \
+  --config configs/probes/activation_row_transfer_deception_quantity_v2_llama3_8b_instruct.json \
   --k-values 1 2 3 \
   --random-seeds 11 23 37 41 53 \
-  --run-id llama31-8b-deception-subspace-baselines
+  --run-id llama3-8b-deception-subspace-baselines
 
 python "$DHA_ROOT/scripts/evaluate_activation_row_transfer_subspace_baselines.py" \
-  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama31_8b_instruct.json \
+  --config configs/probes/activation_row_transfer_sycophancy_pilot_v1_llama3_8b_instruct.json \
   --k-values 1 2 3 \
   --random-seeds 11 23 37 41 53 \
-  --run-id llama31-8b-sycophancy-subspace-baselines
+  --run-id llama3-8b-sycophancy-subspace-baselines
 ```
 
 Analyze deltas against raw runs after substituting the resolved raw/subspace run directories:
@@ -437,7 +437,7 @@ cd "$DHA_ROOT"
 python "$DHA_ROOT/scripts/analyze_activation_row_transfer_subspace_baselines.py" \
   --baseline-run-dir PATH_TO_RAW_TRANSFER_RUN \
   --subspace-run-dir PATH_TO_SUBSPACE_BASELINE_RUN \
-  --run-id llama31-8b-deception-subspace-analysis
+  --run-id llama3-8b-deception-subspace-analysis
 ```
 
 ## Upload Artifacts
