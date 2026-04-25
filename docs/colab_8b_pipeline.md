@@ -34,6 +34,8 @@ pip install -e .
 pip install huggingface_hub safetensors scikit-learn matplotlib pandas
 
 cd "$EFFICACY_ROOT"
+git checkout residual-analysis
+git pull origin residual-analysis
 pip install -r requirements.txt
 ```
 
@@ -183,11 +185,11 @@ def has_manifest_and_shards(path: Path) -> bool:
 def resolve_cache_dataset_args(dataset: str) -> list[str]:
     typed_sources = {
         "Deception-ConvincingGame": (
-            "Deception-InstructedDeception",
+            "Deception-ConvincingGame",
             ["convincing-game__*.jsonl", "convincing-game__*.parquet", "convincing-game__*.json"],
         ),
         "Deception-HarmPressureChoice": (
-            "Deception-InstructedDeception",
+            "Deception-HarmPressureChoice",
             ["harm-pressure-choice__*.jsonl", "harm-pressure-choice__*.parquet", "harm-pressure-choice__*.json"],
         ),
         "Deception-InstructedDeception": (
