@@ -283,6 +283,22 @@ done
 Then run the 8B pipeline from activation extraction onward. Omit the `rollouts` stage unless you intentionally want
 fresh 8B generations instead of fixed-text 8B activations.
 
+The `activations` stage is the cache step for the 8B role-rollout activations. It reads the materialized rollout
+index and writes layer-16 pooled response activations under:
+
+```text
+artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/quantity-axis-v2/activations/
+artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/sycophancy-pilot-v1/activations/
+```
+
+The matching resume indexes and status files are:
+
+```text
+artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/indexes/activations.jsonl
+artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/meta/extract_activations_status.json
+artifacts/corpora/meta-llama-meta-llama-3-1-8b-instruct/assistant-axis/<axis>/meta/coverage.json
+```
+
 QuantityV2:
 
 ```bash
