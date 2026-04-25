@@ -200,6 +200,10 @@ def resolve_cache_dataset_args(dataset: str) -> list[str]:
             "Deception-Mask",
             ["mask__*.jsonl", "mask__*.parquet", "mask__*.json"],
         ),
+        "Deception-AILiar": (
+            "Deception-AILiar",
+            ["ai_liar/paired_examples.jsonl", "ai_liar/ai_liar__*.json", "ai_liar/*.json"],
+        ),
         "Deception-Roleplaying": (
             "Deception-Roleplaying",
             ["roleplaying/dataset.yaml", "roleplaying/*.yaml", "dataset.yaml"],
