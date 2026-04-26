@@ -18,6 +18,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--direction", choices=["push", "pull"], required=True, help="Sync direction.")
     parser.add_argument("--local-dir", type=Path, default=None, help="Optional local path override.")
     parser.add_argument("--repo-id", type=str, default=None, help="Optional HF dataset repo override.")
+    parser.add_argument(
+        "--allow-patterns",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional Hugging Face snapshot allow patterns for selective pulls, for example "
+            "'runs/role-axis-bundles/**'."
+        ),
+    )
+    parser.add_argument(
+        "--ignore-patterns",
+        nargs="*",
+        default=None,
+        help="Optional Hugging Face snapshot ignore patterns for pulls.",
+    )
     return parser.parse_args()
 
 
@@ -42,8 +57,15 @@ def main() -> None:
         repo_type="dataset",
         local_dir=str(local_dir),
         local_dir_use_symlinks=False,
+        allow_patterns=args.allow_patterns,
+        ignore_patterns=args.ignore_patterns,
     )
-    print(f"Pulled hf://datasets/{repo_id} into {local_dir}")
+    pattern_text = ""
+    if args.allow_patterns:
+        pattern_text += f" allow_patterns={args.allow_patterns}"
+    if args.ignore_patterns:
+        pattern_text += f" ignore_patterns={args.ignore_patterns}"
+    print(f"Pulled hf://datasets/{repo_id} into {local_dir}{pattern_text}")
 
 
 if __name__ == "__main__":

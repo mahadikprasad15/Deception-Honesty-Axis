@@ -1,0 +1,49 @@
+{
+  "experiment_name": "sycophancy-pilot-v1-pca",
+  "model": {
+    "id": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "dtype": "float16",
+    "device": "auto",
+    "trust_remote_code": false,
+    "generation": {
+      "max_new_tokens": 192,
+      "temperature": 0.8,
+      "top_p": 0.95,
+      "do_sample": true
+    }
+  },
+  "data": {
+    "question_file": "data/questions/sycophancy_pilot_v1_questions.jsonl",
+    "role_manifest_file": "data/manifests/role_sets/sycophancy_pilot_v1.json"
+  },
+  "subset": {
+    "instruction_selection": "first_n",
+    "instruction_count": 2,
+    "question_selection": "first_n",
+    "question_count": 12
+  },
+  "artifacts": {
+    "root": "artifacts",
+    "dataset_name": "assistant-axis",
+    "analysis_variant": "center-only",
+    "corpus_name": "sycophancy-pilot-v1"
+  },
+  "saving": {
+    "rollout_shard_size": 100,
+    "activation_shard_size": 32,
+    "save_every": 25
+  },
+  "analysis": {
+    "filter_name": "all-responses",
+    "pooling": "mean_response",
+    "anchor_role": "default",
+    "activation_layers": [
+      16
+    ]
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts",
+    "root_prefix": "deception-honesty-axis",
+    "private": true
+  }
+}

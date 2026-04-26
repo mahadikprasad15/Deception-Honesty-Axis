@@ -91,11 +91,22 @@ def _dataset_behavior_map(manifest: dict[str, Any]) -> dict[str, str | None]:
 def _metric_lookup(rows: list[dict[str, str]]) -> dict[tuple[str, str, str], dict[str, str]]:
     lookup: dict[tuple[str, str, str], dict[str, str]] = {}
     for row in rows:
-        key = (str(row["layer_spec"]), str(row["source_dataset"]), str(row["target_dataset"]))
+        key = (
+            _canonical_layer_spec(str(row["layer_spec"])),
+            str(row["source_dataset"]),
+            str(row["target_dataset"]),
+        )
         if key in lookup:
             raise ValueError(f"Duplicate metric row for key={key!r}")
         lookup[key] = row
     return lookup
+
+
+def _canonical_layer_spec(layer_spec: str) -> str:
+    tokens = [token.strip() for token in str(layer_spec).split("__") if token.strip()]
+    if tokens and all(token == tokens[0] for token in tokens):
+        return tokens[0]
+    return str(layer_spec)
 
 
 def _save_heatmap(
@@ -196,6 +207,55 @@ def _save_aggregate_plot(
     ax.set_ylim(0.0, 1.0)
     ax.set_ylabel("Mean AUROC")
     ax.set_title(f"Transfer Summary Comparison (baseline: {baseline_label})", fontsize=15, fontweight="bold")
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.01, 1.0), title="Run")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return str(output_path)
+
+
+def _save_pairwise_grouped_bar_plot(
+    output_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    labels: list[str],
+    offdiag_only: bool,
+) -> str:
+    import matplotlib.pyplot as plt
+
+    ensure_dir(output_path.parent)
+    filtered_rows = [row for row in rows if (not offdiag_only or not bool(row["is_diagonal"]))]
+    pair_labels = [f"{row['source_label']}→{row['target_label']}" for row in filtered_rows]
+
+    x_positions = np.arange(len(filtered_rows), dtype=np.float32)
+    width = 0.8 / max(1, len(labels))
+    fig_width = max(14, len(filtered_rows) * 0.65)
+    fig, ax = plt.subplots(figsize=(fig_width, 6.8))
+
+    for index, label in enumerate(labels):
+        offsets = x_positions - 0.4 + width * 0.5 + index * width
+        values = [float(row[f"auroc__{label}"]) for row in filtered_rows]
+        bars = ax.bar(offsets, values, width=width, label=label)
+        for bar, value in zip(bars, values, strict=False):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                min(0.98, value + 0.012),
+                f"{value:.02f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                rotation=90,
+            )
+
+    title_prefix = "Off-Diagonal " if offdiag_only else ""
+    ax.set_xticks(x_positions, pair_labels, rotation=65, ha="right")
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("AUROC")
+    ax.set_xlabel("Source→Target Dataset Pair")
+    ax.set_title(f"{title_prefix}Pairwise AUROC Comparison", fontsize=15, fontweight="bold")
     ax.grid(True, axis="y", alpha=0.25)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -376,6 +436,22 @@ def main() -> None:
         baseline_label=baseline_label,
     )
     plot_paths.append(aggregate_plot_path)
+    plot_paths.append(
+        _save_pairwise_grouped_bar_plot(
+            plots_dir / "pairwise_auroc_comparison.png",
+            aligned_rows,
+            labels=labels,
+            offdiag_only=False,
+        )
+    )
+    plot_paths.append(
+        _save_pairwise_grouped_bar_plot(
+            plots_dir / "pairwise_offdiag_auroc_comparison.png",
+            aligned_rows,
+            labels=labels,
+            offdiag_only=True,
+        )
+    )
 
     write_json(
         run_root / "results" / "results.json",

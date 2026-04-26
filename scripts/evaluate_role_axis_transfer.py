@@ -29,6 +29,7 @@ from deception_honesty_axis.role_axis_transfer import (
     write_fit_summary_csv,
     write_summary_csv,
 )
+from deception_honesty_axis.sycophancy_activations import normalize_activation_pooling
 from deception_honesty_axis.transfer_config import load_transfer_config
 
 
@@ -103,8 +104,8 @@ def main() -> None:
     invalid_methods = [method for method in transfer_config.methods if method not in SUPPORTED_METHODS]
     if invalid_methods:
         raise ValueError(f"Unsupported methods requested: {invalid_methods}")
-    if transfer_config.pooling != "completion_mean":
-        raise ValueError("This v1 evaluator only supports completion_mean pooling")
+    if normalize_activation_pooling(transfer_config.pooling) != "mean_response":
+        raise ValueError("This evaluator only supports completion/response mean pooling")
 
     write_analysis_manifest(
         run_root,

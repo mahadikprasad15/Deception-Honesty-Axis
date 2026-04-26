@@ -1,0 +1,96 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "experiment": {
+    "name": "activation-row-transfer",
+    "behavior": "deception",
+    "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "dataset_set": "deception"
+  },
+  "activation_rows": {
+    "expected_pooling": "mean_response",
+    "expected_layer_number": 16
+  },
+  "datasets": [
+    {
+      "name": "Deception-AILiar-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-AILiar-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-AILiar-completion/test"
+      }
+    },
+    {
+      "name": "Deception-ConvincingGame-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-ConvincingGame-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-ConvincingGame-completion/test"
+      }
+    },
+    {
+      "name": "Deception-HarmPressureChoice-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-HarmPressureChoice-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-HarmPressureChoice-completion/test"
+      }
+    },
+    {
+      "name": "Deception-InstructedDeception-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-InstructedDeception-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-InstructedDeception-completion/test"
+      }
+    },
+    {
+      "name": "Deception-Mask-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-Mask-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-Mask-completion/test"
+      }
+    },
+    {
+      "name": "Deception-Roleplaying-completion",
+      "behavior": "deception",
+      "train": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-Roleplaying-completion/train"
+      },
+      "eval": {
+        "source_kind": "completion_split",
+        "split_dir": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3.1-8B-Instruct/Deception-Roleplaying-completion/test"
+      }
+    }
+  ],
+  "evaluation": {
+    "methods": [
+      "activation_logistic"
+    ],
+    "random_seed": 42,
+    "logistic_max_iter": 1000
+  }
+}

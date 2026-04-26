@@ -23,10 +23,17 @@ def main() -> None:
 
     anchor_role = str(results_payload.get("anchor_role") or manifest_payload["anchor_role"])
     role_names = list(results_payload.get("role_names") or manifest_payload["role_names"])
+    role_metadata = dict(results_payload.get("role_metadata") or manifest_payload.get("role_metadata") or {})
     layers = list(results_payload["layers"])
 
     write_stage_status(run_root, "materialize_pca_reports", "running", {"layer_count": len(layers)})
-    report_artifacts = write_pca_report_artifacts(run_root, layers, anchor_role, role_names)
+    report_artifacts = write_pca_report_artifacts(
+        run_root,
+        layers,
+        anchor_role,
+        role_names,
+        role_metadata=role_metadata,
+    )
     write_json(
         run_root / "checkpoints" / "materialize_pca_reports_progress.json",
         {"layer_count": len(layers), "completed": True},

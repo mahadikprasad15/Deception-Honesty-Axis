@@ -135,7 +135,7 @@ def main() -> None:
             / "role-axis-bundles"
             / experiment_config.model_slug
             / experiment_config.dataset_slug
-            / experiment_config.role_set_slug
+            / transfer_config.bundle_slug
             / experiment_config.analysis.get("pooling", "unknown-pooling")
             / run_id
         )

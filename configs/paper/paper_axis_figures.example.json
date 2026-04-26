@@ -1,0 +1,59 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "experiment": {
+    "figure_set": "quantity-sycophancy-paper",
+    "model_name": "meta-llama/Llama-3.2-3B-Instruct"
+  },
+  "axes": [
+    {
+      "axis_name": "quantity_axis_v2",
+      "behavior": "deception",
+      "role_manifest": "data/manifests/role_sets/quantity_axis_v2.json",
+      "axis_bundle_run_dir": "artifacts/runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/quantity-axis-v2-cumulative-pc-sweep/mean_response/RUN_ID",
+      "zero_shot_eval_run_dir": "artifacts/runs/behavior-axis-evaluation/meta-llama-llama-3-2-3b-instruct/deception/deception/quantity-axis-v2-cumulative-pc-sweep/RUN_ID",
+      "baseline_transfer_run_dir": "artifacts/runs/activation-row-transfer/meta-llama-llama-3-2-3b-instruct/deception/deception/mean_response-layer-14/RUN_ID",
+      "projected_transfer_run_dirs": {
+        "1": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/deception/deception/quantity-axis-v2-cumulative-pc-sweep/mean_response-layer-14-pcs-1/RUN_ID",
+        "2": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/deception/deception/quantity-axis-v2-cumulative-pc-sweep/mean_response-layer-14-pcs-2/RUN_ID",
+        "3": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/deception/deception/quantity-axis-v2-cumulative-pc-sweep/mean_response-layer-14-pcs-3/RUN_ID"
+      },
+      "dataset_order": [
+        "Deception-AILiar-completion",
+        "Deception-ConvincingGame-completion",
+        "Deception-HarmPressureChoice-completion",
+        "Deception-InstructedDeception-completion",
+        "Deception-Mask-completion",
+        "Deception-Roleplaying-completion",
+        "Deception-ClaimsDefinitional-completion",
+        "Deception-ClaimsEvidential-completion",
+        "Deception-ClaimsFictional-completion"
+      ],
+      "layer_spec": "14",
+      "include_diagonal_pairs": false
+    },
+    {
+      "axis_name": "sycophancy_pilot_v1",
+      "behavior": "sycophancy",
+      "role_manifest": "data/manifests/role_sets/sycophancy_pilot_v1.json",
+      "axis_bundle_run_dir": "artifacts/runs/role-axis-bundles/meta-llama-llama-3-2-3b-instruct/assistant-axis/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response/RUN_ID",
+      "zero_shot_eval_run_dir": "artifacts/runs/behavior-axis-evaluation/meta-llama-llama-3-2-3b-instruct/sycophancy/sycophancy/sycophancy-pilot-v1-cumulative-pc-sweep/RUN_ID",
+      "baseline_transfer_run_dir": "artifacts/runs/activation-row-transfer/meta-llama-llama-3-2-3b-instruct/sycophancy/sycophancy/mean_response-layer-14/RUN_ID",
+      "projected_transfer_run_dirs": {
+        "1": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/sycophancy/sycophancy/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response-layer-14-pcs-1/RUN_ID",
+        "2": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/sycophancy/sycophancy/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response-layer-14-pcs-2/RUN_ID",
+        "3": "artifacts/runs/activation-row-transfer-pc-projection/meta-llama-llama-3-2-3b-instruct/sycophancy/sycophancy/sycophancy-pilot-v1-cumulative-pc-sweep/mean_response-layer-14-pcs-3/RUN_ID"
+      },
+      "dataset_order": [
+        "Sycophancy Dataset",
+        "Open-Ended Sycophancy",
+        "OEQ Validation",
+        "OEQ Indirectness",
+        "OEQ Framing"
+      ],
+      "layer_spec": "14",
+      "include_diagonal_pairs": false
+    }
+  ]
+}

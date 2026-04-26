@@ -1,0 +1,54 @@
+{
+  "artifacts": {
+    "root": "artifacts"
+  },
+  "hf": {
+    "dataset_repo_id": "Prasadmahadik/deception-honesty-axis-artifacts"
+  },
+  "role_axis": {
+    "bundle_name": "sycophancy-pilot-v1-cumulative-pc-sweep",
+    "experiment_config": "configs/experiments/sycophancy_pilot_v1_llama3_8b_instruct.json",
+    "anchor_role": "default",
+    "honest_roles": [
+      "critic",
+      "skeptic",
+      "contrarian",
+      "blunt_advisor",
+      "tough_love_mentor"
+    ],
+    "deceptive_roles": [
+      "yes_man",
+      "flatterer",
+      "people_pleaser",
+      "cheerleader",
+      "enabler"
+    ],
+    "layer_specs": [
+      "16"
+    ],
+    "pc_count": 10
+  },
+  "target": {
+    "activations_root": "/content/drive/MyDrive/Efficacy-of-ensemble-of-attention-probes/data/activations_fullprompt/meta-llama_Meta-Llama-3-8B-Instruct",
+    "datasets": [
+      "Sycophancy Dataset",
+      "Open-Ended Sycophancy",
+      "OEQ Validation",
+      "OEQ Indirectness",
+      "OEQ Framing"
+    ],
+    "source_split": "train",
+    "eval_split": "test",
+    "pooling": "mean_response"
+  },
+  "evaluation": {
+    "methods": [
+      "contrast_zero_shot",
+      "pc1_zero_shot",
+      "pc2_zero_shot",
+      "pc3_zero_shot"
+    ],
+    "logistic_max_iter": 1000,
+    "random_seed": 42
+  }
+}
