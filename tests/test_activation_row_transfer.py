@@ -12,6 +12,7 @@ from pathlib import Path
 import torch
 from safetensors.torch import save_file
 
+from deception_honesty_axis.activation_row_transfer import load_activation_row_dataset
 from deception_honesty_axis.activation_row_transfer_config import load_activation_row_transfer_config
 from deception_honesty_axis.common import read_json
 
@@ -112,6 +113,80 @@ class ActivationRowTransferConfigTest(unittest.TestCase):
                 (repo_root / "data" / "Deception-B-completion" / "train").resolve(),
             )
             self.assertEqual(dataset.eval_source.split, "test")
+
+    def test_activation_row_sources_support_deterministic_stratified_row_splits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir) / "repo"
+            (repo_root / ".git").mkdir(parents=True)
+            (repo_root / "configs").mkdir(parents=True)
+            (repo_root / "data").mkdir(parents=True)
+            records_path = repo_root / "data" / "records.jsonl"
+            config_path = repo_root / "configs" / "transfer.json"
+
+            rows = []
+            for label, center in ((0, -1.0), (1, 1.0)):
+                for index in range(10):
+                    rows.append(
+                        {
+                            "ids": f"{label}-{index}",
+                            "dataset_source": "toy",
+                            "activation": [center, float(index)],
+                            "label": label,
+                            "activation_pooling": "mean_response",
+                            "activation_layer_number": 14,
+                        }
+                    )
+            with records_path.open("w", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(json.dumps(row) + "\n")
+
+            split_payload = {
+                "source_kind": "activation_rows",
+                "activation_jsonl": "data/records.jsonl",
+                "row_split_strategy": "stratified",
+                "row_split_train_fraction": 0.8,
+                "row_split_seed": 7,
+            }
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "artifacts": {"root": "artifacts"},
+                        "experiment": {
+                            "name": "activation-row-transfer",
+                            "behavior": "sycophancy",
+                            "model_name": "meta-llama/Llama-3.2-3B-Instruct",
+                            "dataset_set": "toy",
+                        },
+                        "activation_rows": {
+                            "expected_pooling": "mean_response",
+                            "expected_layer_number": 14,
+                        },
+                        "datasets": [
+                            {
+                                "name": "Toy",
+                                "train": {**split_payload, "row_split": "train"},
+                                "eval": {**split_payload, "row_split": "eval"},
+                            }
+                        ],
+                        "evaluation": {"methods": ["activation_logistic"]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            config = load_activation_row_transfer_config(config_path)
+            dataset = load_activation_row_dataset(
+                config.datasets[0],
+                expected_pooling=config.expected_pooling,
+                expected_layer_number=config.expected_layer_number,
+            )
+
+            self.assertEqual(dataset.train.summary()["label_counts"], {0: 8, 1: 8})
+            self.assertEqual(dataset.eval.summary()["label_counts"], {0: 2, 1: 2})
+            self.assertEqual(set(dataset.train.sample_ids).isdisjoint(dataset.eval.sample_ids), True)
+            self.assertEqual(dataset.train.source_manifest["row_split_seed"], 7)
+            self.assertEqual(dataset.eval.source_manifest["row_split_selected_count"], 4)
 
 
 class EvaluateActivationRowTransferScriptTest(unittest.TestCase):

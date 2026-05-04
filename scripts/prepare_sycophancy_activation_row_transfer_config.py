@@ -55,6 +55,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip missing targets instead of failing.",
     )
+    parser.add_argument(
+        "--row-split-train-fraction",
+        type=float,
+        default=None,
+        help=(
+            "If set, write nested train/eval sources that deterministically stratify each records.jsonl "
+            "with this training fraction. Reuses existing activations; no extraction is rerun."
+        ),
+    )
+    parser.add_argument(
+        "--row-split-seed",
+        type=int,
+        default=42,
+        help="Seed for deterministic stratified row splits when --row-split-train-fraction is set.",
+    )
     return parser.parse_args()
 
 
@@ -135,14 +150,33 @@ def main() -> None:
             relative_records_path = records_path.relative_to(repo_root)
         except ValueError:
             relative_records_path = records_path
-        datasets.append(
-            {
-                "name": display_name,
-                "behavior": "sycophancy",
-                "source_kind": "activation_rows",
-                "activation_jsonl": str(relative_records_path),
+        source_payload = {
+            "source_kind": "activation_rows",
+            "activation_jsonl": str(relative_records_path),
+        }
+        dataset_payload: dict[str, Any] = {
+            "name": display_name,
+            "behavior": "sycophancy",
+        }
+        if args.row_split_train_fraction is None:
+            dataset_payload.update(source_payload)
+        else:
+            split_payload = {
+                "row_split_strategy": "stratified",
+                "row_split_train_fraction": float(args.row_split_train_fraction),
+                "row_split_seed": int(args.row_split_seed),
             }
-        )
+            dataset_payload["train"] = {
+                **source_payload,
+                **split_payload,
+                "row_split": "train",
+            }
+            dataset_payload["eval"] = {
+                **source_payload,
+                **split_payload,
+                "row_split": "eval",
+            }
+        datasets.append(dataset_payload)
 
     if missing and not args.allow_missing:
         raise FileNotFoundError(

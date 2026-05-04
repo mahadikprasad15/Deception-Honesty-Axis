@@ -63,6 +63,38 @@ class ActivationRowSourceConfig:
         return "train"
 
     @property
+    def row_split(self) -> str | None:
+        value = self.raw.get("row_split")
+        if value in (None, ""):
+            return None
+        resolved = str(value)
+        if resolved not in {"train", "eval", "test"}:
+            raise ValueError(f"row_split must be one of train/eval/test, got {resolved!r}")
+        return "eval" if resolved == "test" else resolved
+
+    @property
+    def row_split_strategy(self) -> str | None:
+        value = self.raw.get("row_split_strategy")
+        if value in (None, ""):
+            return None
+        resolved = str(value)
+        if resolved != "stratified":
+            raise ValueError(f"Unsupported row_split_strategy {resolved!r}; expected 'stratified'")
+        return resolved
+
+    @property
+    def row_split_train_fraction(self) -> float:
+        value = self.raw.get("row_split_train_fraction", 0.8)
+        fraction = float(value)
+        if not 0.0 < fraction < 1.0:
+            raise ValueError(f"row_split_train_fraction must be in (0, 1), got {fraction}")
+        return fraction
+
+    @property
+    def row_split_seed(self) -> int:
+        return int(self.raw.get("row_split_seed", 42))
+
+    @property
     def group_field(self) -> str:
         return str(self.raw.get("group_field", "dataset_source"))
 
@@ -98,6 +130,10 @@ class ActivationRowSourceConfig:
             "split": self.split,
             "group_field": self.group_field,
             "group_value": self.group_value,
+            "row_split": self.row_split,
+            "row_split_strategy": self.row_split_strategy,
+            "row_split_train_fraction": self.row_split_train_fraction if self.row_split_strategy else None,
+            "row_split_seed": self.row_split_seed if self.row_split_strategy else None,
         }
         if self.split_dir is not None:
             payload["split_dir"] = str(self.split_dir)
@@ -134,6 +170,10 @@ class ActivationRowDatasetConfig:
             "split",
             "group_field",
             "group_value",
+            "row_split",
+            "row_split_strategy",
+            "row_split_train_fraction",
+            "row_split_seed",
         }
         if any(key in self.raw for key in top_level_keys):
             return {key: self.raw[key] for key in top_level_keys if key in self.raw}
