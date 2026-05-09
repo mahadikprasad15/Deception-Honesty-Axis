@@ -82,6 +82,59 @@ def _select_rows(rows: list[dict[str, Any]], source: ActivationRowSourceConfig, 
     return filtered
 
 
+def _stratified_row_split(
+    rows: list[dict[str, Any]],
+    source: ActivationRowSourceConfig,
+    dataset_name: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if source.row_split_strategy is None:
+        return rows, {}
+    if source.row_split is None:
+        raise ValueError(
+            f"Dataset {dataset_name!r} uses row_split_strategy={source.row_split_strategy!r} "
+            "but does not specify row_split"
+        )
+
+    by_label: dict[int, list[int]] = {}
+    for index, row in enumerate(rows):
+        label = int(row.get("label", -1))
+        if label not in {0, 1}:
+            raise ValueError(f"Expected binary label 0/1 for row split in {dataset_name!r}, got {label}")
+        by_label.setdefault(label, []).append(index)
+    if set(by_label) != {0, 1}:
+        raise ValueError(f"Row split for dataset {dataset_name!r} requires both labels 0 and 1")
+
+    rng = np.random.default_rng(source.row_split_seed)
+    selected_indices: list[int] = []
+    split_counts: dict[int, dict[str, int]] = {}
+    for label, indices in sorted(by_label.items()):
+        shuffled = np.asarray(indices, dtype=np.int64)
+        rng.shuffle(shuffled)
+        train_count = int(round(len(shuffled) * source.row_split_train_fraction))
+        train_count = max(1, min(len(shuffled) - 1, train_count))
+        train_indices = shuffled[:train_count]
+        eval_indices = shuffled[train_count:]
+        chosen = train_indices if source.row_split == "train" else eval_indices
+        selected_indices.extend(int(index) for index in chosen.tolist())
+        split_counts[int(label)] = {
+            "total": int(len(shuffled)),
+            "train": int(train_indices.shape[0]),
+            "eval": int(eval_indices.shape[0]),
+        }
+
+    selected = sorted(selected_indices)
+    manifest = {
+        "row_split_strategy": source.row_split_strategy,
+        "row_split": source.row_split,
+        "row_split_train_fraction": source.row_split_train_fraction,
+        "row_split_seed": source.row_split_seed,
+        "row_split_label_counts": split_counts,
+        "row_split_total_count": int(len(rows)),
+        "row_split_selected_count": int(len(selected)),
+    }
+    return [rows[index] for index in selected], manifest
+
+
 def _resolve_completion_split_layer_spec(split_dir: Path, expected_layer_number: int | None):  # noqa: ANN202
     from safetensors.torch import load_file
 
@@ -159,6 +212,7 @@ def load_activation_row_split(
 
     rows, source_manifest = load_activation_rows(**source.resolved_load_kwargs())
     selected_rows = _select_rows(rows, source, dataset_name)
+    selected_rows, row_split_manifest = _stratified_row_split(selected_rows, source, dataset_name)
     stacked = validate_and_stack_activation_rows(
         selected_rows,
         group_field=source.group_field,
@@ -188,6 +242,7 @@ def load_activation_row_split(
             "requested_split_name": split_name,
             "selection_group_field": source.group_field,
             "selection_group_value": source.group_value,
+            **row_split_manifest,
         },
         group_field=source.group_field,
         group_value=source.group_value,
